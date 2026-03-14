@@ -1,7 +1,4 @@
-"""OpenClaw skill package entry."""
+"""AstrBot plugin package."""
 
-from openclaw_main import skill_main
-
-__all__ = ["skill_main"]
+__all__ = ["__version__"]
 __version__ = "1.1.0"
-

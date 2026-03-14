@@ -20,7 +20,6 @@ data/
 *.json
 !_conf_schema.json
 !config.example.json
-!skill.yaml
 
 # B站登录 Cookie (绝对不要上传!)
 bili_cookies.json

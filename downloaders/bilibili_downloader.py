@@ -7,8 +7,8 @@ import yt_dlp
 
 from astrbot.api import logger
 
-from models.audio_model import AudioDownloadResult
-from models.transcriber_model import TranscriptResult, TranscriptSegment
+from ..models.audio_model import AudioDownloadResult
+from ..models.transcriber_model import TranscriptResult, TranscriptSegment
 from .base import QUALITY_MAP, Downloader
 
 
