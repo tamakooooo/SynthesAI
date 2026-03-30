@@ -1,0 +1,161 @@
+# Learning Assistant - Adapter Configuration
+# Version: 0.1.0
+
+# Adapter Configuration
+adapters:
+  # Feishu Adapter
+  feishu:
+    enabled: false
+    priority: 1
+
+    config:
+      # App credentials from environment variables
+      app_id_env: "FEISHU_APP_ID"
+      app_secret_env: "FEISHU_APP_SECRET"
+
+      # API endpoint
+      base_url: "https://open.feishu.cn/open-apis"
+
+      # Wiki/Document settings
+      wiki:
+        # Default document space ID
+        space_id: null
+        # Parent node ID (folder)
+        parent_node_id: null
+
+      # Card/Message settings
+      card:
+        # Enable interactive cards
+        interactive: true
+        # Card template
+        template: "templates/outputs/feishu_card.json"
+
+      # Event subscription
+      events:
+        # Subscribe to document updates
+        document_update: false
+        # Subscribe to comments
+        comment: false
+
+    cli:
+      command_name: "feishu"
+      description: "Push content to Feishu"
+
+  # Siyuan Note Adapter
+  siyuan:
+    enabled: false
+    priority: 2
+
+    config:
+      # Siyuan API endpoint
+      api_url: "http://localhost:6806"
+
+      # Notebook settings
+      notebook:
+        # Default notebook ID
+        notebook_id: null
+        # Default box (notebook name)
+        box: "notebook"
+
+      # Document settings
+      document:
+        # Parent document path
+        parent_path: "/summary"
+        # Create subdocuments by module
+        auto_subdocs: true
+
+      # Sync settings
+      sync:
+        # Auto sync on content update
+        auto_sync: false
+        # Sync interval in minutes
+        interval: 30
+
+    cli:
+      command_name: "siyuan"
+      description: "Push content to Siyuan Note"
+
+  # Obsidian Adapter
+  obsidian:
+    enabled: false
+    priority: 3
+
+    config:
+      # Obsidian vault path
+      vault_path: null  # Must be configured by user
+
+      # Folder settings
+      folder:
+        # Default folder for summaries
+        summary: "summaries"
+        # Default folder for vocabulary
+        vocabulary: "vocabulary"
+        # Default folder for links
+        links: "links"
+
+      # Note settings
+      note:
+        # Add tags automatically
+        auto_tags: true
+        # Tag prefix
+        tag_prefix: "learning-assistant"
+        # Use templates
+        templates: false
+
+      # File watcher settings
+      watcher:
+        # Enable file watcher
+        enabled: false
+        # Watch interval in seconds
+        interval: 5
+
+    cli:
+      command_name: "obsidian"
+      description: "Push content to Obsidian vault"
+
+  # Custom Adapter Template
+  # (Copy and modify for new adapters)
+  custom:
+    enabled: false
+    priority: 99
+
+    config:
+      # Add adapter-specific configuration here
+      api_url: null
+      api_key_env: null
+
+    cli:
+      command_name: "custom"
+      description: "Custom adapter"
+
+# Event Bus Configuration
+event_bus:
+  enabled: true
+
+  # Event subscriptions (adapter listens to events)
+  subscriptions:
+    # Feishu subscribes to VIDEO_SUMMARIZED event
+    feishu:
+      - "video.summarized"
+      - "link.processed"
+      - "vocabulary.extracted"
+
+    # Siyuan subscribes to VIDEO_SUMMARIZED event
+    siyuan:
+      - "video.summarized"
+      - "link.processed"
+
+    # Obsidian subscribes to all events
+    obsidian:
+      - "video.summarized"
+      - "link.processed"
+      - "vocabulary.extracted"
+
+  # Event retry policy
+  retry:
+    # Maximum retries
+    max_retries: 3
+    # Retry delay in seconds
+    delay: 5
+    # Exponential backoff
+    exponential: true

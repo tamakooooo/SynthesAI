@@ -1,0 +1,149 @@
+# Learning Assistant - Module Configuration
+# Version: 0.1.0
+
+# Module Configuration
+modules:
+  # Video Summary Module (MVP Priority)
+  video_summary:
+    enabled: true
+    priority: 1  # Higher priority = loaded first
+
+    # Module-specific configuration
+    config:
+      # Video download settings
+      download:
+        # Output directory for downloaded videos
+        output_dir: "data/cache/downloads"
+        # Video quality (best, medium, worst)
+        quality: "medium"
+        # Maximum download duration in minutes
+        max_duration: 60
+        # Supported platforms
+        platforms:
+          - "bilibili"
+          - "youtube"
+          - "douyin"
+          - "tiktok"
+        # Cookie files for authenticated download
+        cookies:
+          bilibili: "config/cookies/bilibili_cookies.txt"
+          youtube: "config/cookies/youtube_cookies.txt"
+
+      # Audio extraction settings
+      audio:
+        # Audio format (wav, mp3, aac)
+        format: "wav"
+        # Audio quality (high, medium, low)
+        quality: "medium"
+        # Sample rate
+        sample_rate: 16000
+
+      # Transcription settings
+      transcription:
+        # Whisper model size (tiny, base, small, medium, large)
+        model: "base"
+        # Language (auto, en, zh, ja, etc.)
+        language: "auto"
+        # Enable VAD (Voice Activity Detection)
+        vad: true
+        # Output format (json, srt, txt)
+        output_format: "json"
+
+      # Summary settings
+      summary:
+        # LLM prompt template
+        prompt_template: "templates/prompts/video_summary.yaml"
+        # Summary output language
+        output_language: "zh"  # zh, en
+        # Maximum tokens for summary
+        max_tokens: 2000
+
+      # Export settings
+      export:
+        # Default output format
+        format: "markdown"
+        # Include timestamps
+        timestamps: true
+        # Include chapters
+        chapters: true
+        # Include key points
+        key_points: true
+
+    # CLI command configuration
+    cli:
+      command_name: "video"
+      description: "Summarize video content"
+      aliases:
+        - "v"
+        - "vid"
+
+  # Link Learning Module (Planned)
+  link_learning:
+    enabled: false
+    priority: 2
+
+    config:
+      # Web scraping settings
+      scraper:
+        # Timeout in seconds
+        timeout: 10
+        # User agent
+        user_agent: "LearningAssistant/0.1.0"
+        # Enable JavaScript rendering (playwright)
+        js_rendering: false
+
+      # Content parsing settings
+      parser:
+        # Content extraction method (trafilatura, readability)
+        method: "trafilatura"
+        # Minimum content length
+        min_length: 100
+
+      # Learning card settings
+      card:
+        # Generate Q&A
+        qa: true
+        # Generate quiz
+        quiz: true
+        # Learning path recommendation
+        learning_path: true
+
+    cli:
+      command_name: "link"
+      description: "Process web articles and generate knowledge cards"
+      aliases:
+        - "l"
+        - "article"
+
+  # Vocabulary Module (Planned)
+  vocabulary:
+    enabled: false
+    priority: 3
+
+    config:
+      # Word extraction settings
+      extraction:
+        # Minimum word length
+        min_length: 3
+        # Maximum words per session
+        max_words: 20
+        # Difficulty level (beginner, intermediate, advanced)
+        level: "intermediate"
+
+      # Word card settings
+      card:
+        # Include phonetics
+        phonetics: true
+        # Include examples
+        examples: true
+        # Include synonyms
+        synonyms: true
+        # Generate contextual text
+        contextual_text: true
+
+    cli:
+      command_name: "vocabulary"
+      description: "Extract vocabulary and generate word cards"
+      aliases:
+        - "vocab"
+        - "words"

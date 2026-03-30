@@ -1,0 +1,131 @@
+# Learning Assistant - Global Settings
+# Version: 0.1.0
+
+# Application Settings
+app:
+  name: "Learning Assistant"
+  version: "0.1.0"
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_file: "logs/learning_assistant.log"
+
+# LLM Provider Settings
+llm:
+  # Default provider (choose one: openai, anthropic, deepseek)
+  default_provider: "openai"
+
+  # Provider configurations
+  providers:
+    openai:
+      # API key from environment variable
+      api_key_env: "OPENAI_API_KEY"
+      # Default model
+      default_model: "gpt-4o"
+      # Available models
+      models:
+        - "gpt-4o"
+        - "gpt-4-turbo"
+        - "gpt-3.5-turbo"
+      # API base URL (optional, for custom endpoints)
+      base_url: null
+      # Timeout in seconds
+      timeout: 30
+      # Max retries
+      max_retries: 3
+
+    anthropic:
+      api_key_env: "ANTHROPIC_API_KEY"
+      default_model: "claude-3-5-sonnet-20241022"
+      models:
+        - "claude-3-5-sonnet-20241022"
+        - "claude-3-opus-20240229"
+        - "claude-3-haiku-20240307"
+      timeout: 30
+      max_retries: 3
+
+    deepseek:
+      api_key_env: "DEEPSEEK_API_KEY"
+      default_model: "deepseek-chat"
+      models:
+        - "deepseek-chat"
+        - "deepseek-coder"
+      base_url: "https://api.deepseek.com/v1"
+      timeout: 30
+      max_retries: 3
+
+  # Cost tracking
+  cost_tracking:
+    enabled: true
+    daily_limit: 10.0  # USD
+    monthly_limit: 100.0  # USD
+    warning_threshold: 0.8  # 80% of limit
+
+# Cache Settings
+cache:
+  enabled: true
+  # Cache directory
+  directory: "data/cache"
+  # Cache expiry in days
+  expiry_days: 7
+  # Maximum cache size in MB
+  max_size_mb: 500
+
+# History Settings
+history:
+  enabled: true
+  # History directory
+  directory: "data/history"
+  # Maximum history records
+  max_records: 1000
+  # Auto cleanup old records (older than days)
+  cleanup_days: 30
+
+# Task Management
+task:
+  enabled: true
+  # Task state directory
+  directory: "data/tasks"
+  # Auto resume interrupted tasks
+  auto_resume: false
+  # Maximum concurrent tasks
+  max_concurrent: 3
+
+# Output Settings
+output:
+  # Default output format (markdown, json, pdf)
+  default_format: "markdown"
+  # Output directory
+  directory: "data/outputs"
+  # Template directory
+  template_directory: "templates/outputs"
+  # Auto create subdirectories by module
+  auto_subdirs: true
+
+# Plugin Settings
+plugin:
+  # Plugin directories (relative to project root)
+  directories:
+    - "src/learning_assistant/modules"
+    - "src/learning_assistant/adapters"
+    - "plugins"  # Third-party plugins
+  # Enable plugin hot reload
+  hot_reload: false
+  # Plugin timeout in seconds
+  load_timeout: 5
+
+# Performance Settings
+performance:
+  # Enable multiprocessing for video processing
+  multiprocessing: true
+  # Worker count for parallel processing
+  worker_count: 4
+  # Memory limit in MB
+  memory_limit_mb: 500
+
+# Security Settings
+security:
+  # Validate API keys at startup
+  validate_api_keys: true
+  # Encrypt sensitive data in storage
+  encrypt_storage: false
+  # Allow insecure connections (use with caution)
+  allow_insecure: false

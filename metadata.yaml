@@ -1,6 +1,0 @@
-name: astrbot_plugin_video_analyzer
-display_name: Video Analyzer 视频分析
-desc: B站/抖音视频AI总结与发布，支持飞书知识库与互动卡片
-version: v1.1.0
-author: tamakooooo
-repo: https://github.com/tamakooooo/Video_analyzer

@@ -1,53 +1,118 @@
-# 多余文件夹（参考项目、其他插件、旧版）
-BiliNote-master/
-astrbot-plugin-bilinote/
-astrbot-plugin-pic-mirror-fork/
-astrbot_plugin_video_analyzer+/
-*.zip
-test_layout.html
-
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*.pyo
-*.egg-info/
-dist/
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
 *.egg
 
-# 运行时数据 (包含隐私信息)
-data/
-*.json
-!_conf_schema.json
-!config.example.json
+# PyInstaller
+*.manifest
+*.spec
 
-# B站登录 Cookie (绝对不要上传!)
-bili_cookies.json
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
 
-# 生成的图片
-*.png
-!logo.png
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+pytest_cache/
 
-# 音频文件
-*.mp3
-*.wav
-*.m4a
-*.flac
+# Translations
+*.mo
+*.pot
 
-# IDE
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+
+# Project specific
+data/cache/*
+data/history/*
+data/outputs/*
+!data/cache/.gitkeep
+!data/history/.gitkeep
+!data/outputs/.gitkeep
+
+# Logs
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# 虚拟环境
-venv/
-.env/
+# Temporary files
+*.tmp
+*.bak
 
-# 日志
-logs/
+# Secrets (NEVER commit these!)
+*.pem
+*.key
+secrets.yaml
+.env.local
+.env.*.local
+
+# Video/Audio files (large)
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.flv
+*.webm
+*.mp3
+*.wav
+*.flac
+*.aac
+*.m4a
+
+# Model files (large)
+*.pt
+*.pth
+*.bin
+*.onnx
+*.model
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3everything-claude-code/
