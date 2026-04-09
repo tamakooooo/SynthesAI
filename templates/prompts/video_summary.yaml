@@ -1,0 +1,276 @@
+# Video Summary Prompt Template
+# Generates structured summary from video transcription
+
+name: video_summary
+version: "1.0"
+language: zh
+description: Generate structured summary from video transcription
+
+# Template variables
+variables:
+  video_title:
+    type: string
+    required: true
+    description: Video title
+  transcript:
+    type: string
+    required: true
+    description: Full video transcript text
+  language:
+    type: string
+    required: false
+    default: "zh"
+    description: Output language (zh/en)
+  focus_areas:
+    type: list
+    required: false
+    default: []
+    description: Specific areas to focus on (e.g., ["技术要点", "实践案例"])
+
+# JSON Schema for structured output
+output_schema:
+  type: object
+  properties:
+    title:
+      type: string
+      description: Video title or main topic
+    duration_estimate:
+      type: string
+      description: Estimated video duration (e.g., "15分钟")
+    summary:
+      type: string
+      description: Brief overall summary (2-3 sentences)
+    key_points:
+      type: array
+      items:
+        type: object
+        properties:
+          point:
+            type: string
+            description: Key point description
+          timestamp:
+            type: string
+            description: Approximate timestamp (if available)
+          importance:
+            type: string
+            enum: [high, medium, low]
+        required: [point, importance]
+    chapters:
+      type: array
+      items:
+        type: object
+        properties:
+          title:
+            type: string
+            description: Chapter title
+          start_time:
+            type: string
+            description: Start timestamp
+          end_time:
+            type: string
+            description: End timestamp
+          summary:
+            type: string
+            description: Chapter summary
+          screenshot_path:
+            type: string
+            description: Relative path to screenshot (filled by system, not LLM)
+        required: [title, start_time, summary]
+    qa_items:
+      type: array
+      items:
+        type: object
+        properties:
+          question:
+            type: string
+            description: Question viewers might ask
+          answer:
+            type: string
+            description: Answer based on video content
+        required: [question, answer]
+    topics:
+      type: array
+      items:
+        type: string
+      description: Main topics covered
+  required: [title, summary, key_points, chapters]
+
+# System prompt
+system_prompt: |
+  你是一位专业的内容分析专家，擅长从视频内容中提炼核心观点，生成专业、准确、结构化的内容总结。
+
+  你需要遵循以下专业标准：
+
+  ## 标题要求
+  - 专业性：使用准确、专业的术语
+  - 简洁性：避免冗长，突出核心主题
+  - 完整性：涵盖主要内容和观点
+  - 示例：
+    * 不佳："这是一个关于Python的视频"
+    * 优秀："Python 异步编程：原理、应用与最佳实践"
+
+  ## 概述要求
+  - 客观性：准确反映视频内容，避免主观判断
+  - 专业性：使用专业术语，体现深度理解
+  - 结构性：先阐述核心观点，再说明背景/原因，最后指出意义/影响
+  - 长度：2-4句话，约100-200字
+  - 示例：
+    * 不佳："这个视频讲了花甲和玻璃纤维的关系"
+    * 优秀："网络传言'吃花甲等于吃玻璃纤维'源于对科研文献的误读。研究显示特定海域野生牡蛎体内检测出玻璃纤维，与养殖贝类关联度低，且经消化道摄入对人体风险有限。该研究旨在警示海洋污染，而非食品安全风险。"
+
+  ## 章节标题要求
+  - 专业性：使用准确、专业的表述
+  - 结构化：体现逻辑层次（问题-分析-结论，或 现象-原因-影响）
+  - 具体化：避免模糊标题，要有实质内容
+  - 格式：可采用"主题+角度"模式
+  - 示例：
+    * 不佳："第一部分"、"介绍"、"总结"
+    * 优秀："谣言溯源：营销号的误读与夸大"、"研究剖析：实验设计与核心发现"、"风险评估：玻璃纤维的人体危害分析"
+
+  输出格式要求（严格遵守）：
+  - 必须返回合法的 JSON 对象（可用 json.loads 解析）
+  - 所有字段名必须使用英文：title, summary, key_points, chapters
+  - chapters 必须是数组，每个元素必须有 title（字符串）、start_time、summary 字段
+  - key_points 必须是数组，每个元素必须有 point、importance 字段
+  - 不要使用中文字段名或嵌套对象作为章节标题
+
+  JSON 结构示例：
+  {
+    "title": "专业标题",
+    "summary": "专业概述",
+    "key_points": [
+      {"point": "关键点描述", "importance": "high"}
+    ],
+    "chapters": [
+      {"title": "章节标题（字符串）", "start_time": "00:00", "summary": "章节概述"}
+    ]
+  }
+
+# User prompt template
+user_prompt: |
+  视频原始标题：{{video_title}}
+
+  转录文本：
+  {{transcript}}
+
+  {% if focus_areas %}
+  重点关注领域：
+  {% for area in focus_areas %}
+  - {{area}}
+  {% endfor %}
+  {% endif %}
+
+  请生成专业、详细的内容总结：
+
+  ## 输出要求（JSON 格式）
+
+  1. **标题**（title 字段，字符串）：专业、准确、简洁（1句话）
+
+  2. **概述**（summary 字段，字符串）：200-300字，包含：
+     - 核心观点（1-2句话）
+     - 研究背景或事件起因（1-2句话）
+     - 关键证据或论证过程（2-3句话）
+     - 结论与影响（1-2句话）
+
+  3. **章节**（chapters 字段，数组）：5-8个章节，每个章节对象包含：
+     - title（字符串）：专业、具体、有层次的标题（10-20字）
+     - start_time（字符串）：时间戳，如 "00:00"
+     - summary（字符串）：详细概括章节内容（80-120字），包含具体事实、数据、论点
+
+  4. **关键要点**（key_points 字段，数组）：3-5个核心要点，每个要点对象包含：
+     - point（字符串）：详细的要点描述（包含具体信息，不只是概括）
+     - importance（字符串）：重要性级别（high/medium/low）
+
+  5. **问答预判**（qa_items 字段，数组）：3-5个观众可能产生的疑问，每个问题对象包含：
+     - question（字符串）：观众可能提出的问题
+     - answer（字符串）：基于视频内容的准确解答
+
+  6. **主题标签**（topics 字段，数组）：5-10个相关主题标签
+
+  **重要**：输出必须是完整的、合法的 JSON 对象，所有字段名使用英文，章节和关键要点使用数组格式（方括号 []）。
+
+  输出语言：{{language}}
+
+# Example for few-shot learning (JSON format)
+examples:
+  - input:
+      video_title: "Python 异步编程入门到精通"
+      transcript: |
+        大家好，今天我们来聊聊 Python 的异步编程。
+        首先什么是异步编程呢？
+        异步编程是一种并发编程模式...
+        [示例转录文本]
+    output:
+      {
+        "title": "Python 异步编程：核心原理、实现机制与实践应用",
+        "summary": "本视频系统阐述 Python 异步编程的核心概念、实现机制与应用场景。首先介绍异步编程的定义、特征及其与同步编程的本质差异，揭示事件循环机制如何实现非阻塞 I/O 操作。深入讲解 asyncio 库的工作原理、async/await 语法糖的本质，以及协程在 I/O 密集型场景下的性能优势。通过爬虫、网络请求等实战案例演示异步编程的正确姿势，总结常见陷阱如阻塞事件循环、混合同步异步代码等，帮助开发者掌握异步编程的最佳实践。",
+        "key_points": [
+          {
+            "point": "异步编程通过事件循环机制实现非阻塞 I/O 操作，允许单线程处理多个并发请求，显著提升 I/O 密集型任务的吞吐量",
+            "importance": "high"
+          },
+          {
+            "point": "async/await 是协程的语法糖，本质是基于生成器的协作式多任务，让异步代码写起来像同步代码",
+            "importance": "high"
+          },
+          {
+            "point": "常见陷阱：在异步函数中使用 time.sleep()、requests 等同步阻塞代码会阻塞整个事件循环",
+            "importance": "high"
+          },
+          {
+            "point": "异步编程适用于 I/O 密集型任务，对 CPU 密集型任务无明显优势",
+            "importance": "medium"
+          }
+        ],
+        "chapters": [
+          {
+            "title": "基础概念：异步编程的本质与特征",
+            "start_time": "00:00",
+            "summary": "解析异步编程的定义、与同步编程的差异，以及其非阻塞特性。对比多线程、多进程等并发模型，阐述异步编程在资源消耗和适用场景上的优势，适合处理大量 I/O 等待的场景。"
+          },
+          {
+            "title": "核心机制：事件循环与协程原理",
+            "start_time": "05:30",
+            "summary": "深入 asyncio 事件循环的实现机制，理解协程的调度与切换原理。讲解事件循环如何管理任务队列、如何通过 await 关键字挂起和恢复协程，以及协程与生成器的关系。"
+          },
+          {
+            "title": "实践应用：爬虫案例与最佳实践",
+            "start_time": "12:00",
+            "summary": "分析异步编程的适用场景，演示异步爬虫实战案例。对比同步爬虫与异步爬虫的性能差异（10倍以上提升），展示如何使用 aiohttp 进行异步 HTTP 请求，总结代码组织模式。"
+          },
+          {
+            "title": "常见陷阱：阻塞事件循环的错误",
+            "start_time": "18:30",
+            "summary": "总结异步编程中的常见错误：在异步函数中调用同步阻塞函数、忘记 await 协程、过度使用异步导致代码复杂度增加。通过实际错误案例演示这些问题如何导致性能下降或死锁。"
+          },
+          {
+            "title": "进阶技巧：并发控制与异常处理",
+            "start_time": "23:00",
+            "summary": "讲解如何使用 asyncio.Semaphore 控制并发数量、如何正确处理协程异常、如何设置超时和取消任务。介绍 asyncio.wait_for、asyncio.shield 等高级 API 的使用场景。"
+          },
+          {
+            "title": "性能对比：异步 vs 同步实测数据",
+            "start_time": "28:15",
+            "summary": "通过实际测试数据对比异步和同步代码的性能差异：在爬取 100 个网页的任务中，同步代码耗时 30 秒，异步代码仅需 2.5 秒。分析性能提升的原理和限制因素。"
+          }
+        ],
+        "qa_items": [
+          {
+            "question": "异步编程和同步编程的主要区别是什么？",
+            "answer": "同步编程按顺序执行，每个任务完成后才执行下一个；异步编程可以在等待 I/O 时切换到其他任务，单线程就能处理多个并发请求，效率更高。"
+          },
+          {
+            "question": "什么场景适合使用异步编程？",
+            "answer": "网络请求、文件读写、数据库查询等 I/O 密集型任务。对 CPU 密集型计算任务（如图像处理、科学计算）无明显优势。"
+          },
+          {
+            "question": "async/await 的本质是什么？",
+            "answer": "是协程的语法糖，让异步代码写起来像同步代码，本质上还是基于生成器的协作式多任务，由事件循环调度。"
+          },
+          {
+            "question": "在异步函数中能用 time.sleep() 吗？",
+            "answer": "不能！time.sleep() 是同步阻塞函数，会阻塞整个事件循环。应该用 asyncio.sleep()，它是异步非阻塞的。"
+          }
+        ],
+        "topics": ["Python", "异步编程", "asyncio", "协程", "事件循环", "并发编程", "I/O密集型", "性能优化", "aiohttp", "爬虫"]
+      }

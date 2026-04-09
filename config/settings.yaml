@@ -16,23 +16,27 @@ llm:
   # Provider configurations
   providers:
     openai:
-      # API key from environment variable
+      # API key (optional - can use environment variable or settings.local.yaml)
+      # api_key: "your-api-key-here"  # Uncomment and set your key
+      # API key from environment variable (fallback)
       api_key_env: "OPENAI_API_KEY"
       # Default model
-      default_model: "gpt-4o"
+      default_model: "kimi-k2.5"
       # Available models
       models:
+        - "kimi-k2.5"
         - "gpt-4o"
         - "gpt-4-turbo"
         - "gpt-3.5-turbo"
       # API base URL (optional, for custom endpoints)
-      base_url: null
+      base_url: "https://api.tamako.online/v1"
       # Timeout in seconds
       timeout: 30
       # Max retries
       max_retries: 3
 
     anthropic:
+      # api_key: "your-anthropic-api-key"  # Uncomment and set your key
       api_key_env: "ANTHROPIC_API_KEY"
       default_model: "claude-3-5-sonnet-20241022"
       models:
@@ -43,6 +47,7 @@ llm:
       max_retries: 3
 
     deepseek:
+      # api_key: "your-deepseek-api-key"  # Uncomment and set your key
       api_key_env: "DEEPSEEK_API_KEY"
       default_model: "deepseek-chat"
       models:

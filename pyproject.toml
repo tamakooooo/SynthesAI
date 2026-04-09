@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "learning-assistant"
-version = "0.1.0"
-description = "A modular, plugin-based AI learning assistant CLI tool"
+version = "0.2.0"
+description = "A modular, plugin-based AI learning assistant CLI tool with Agent integration support"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -37,11 +37,17 @@ dependencies = [
     # Video Processing
     "yt-dlp",
     "faster-whisper>=0.10.0",
+    "yutto>=2.2.0",  # B站-specific downloader (avoids SSL issues)
+
+    # Authentication
+    "qrcode>=7.4.0",
 
     # Web Processing
     "requests>=2.31.0",
     "beautifulsoup4>=4.12.0",
     "trafilatura>=1.6.0",
+    "aiohttp>=3.9.0",
+    "python-dateutil>=2.8.0",
 
     # Data Processing
     "jinja2>=3.1.0",
@@ -63,6 +69,12 @@ dev = [
     # Documentation
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
+]
+
+link = [
+    # Optional dependencies for Link Learning module
+    "playwright>=1.40.0",
+    "readability-lxml>=0.8.1",
 ]
 
 [project.scripts]
@@ -116,6 +128,7 @@ select = [
 ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
+    "B027",  # empty method in abstract base class (optional methods)
 ]
 
 [tool.ruff.lint.isort]

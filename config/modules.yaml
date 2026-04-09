@@ -10,6 +10,14 @@ modules:
 
     # Module-specific configuration
     config:
+      # LLM settings
+      llm:
+        provider: "openai"
+        model: "kimi-k2.5"
+        base_url: "https://api.tamako.online/v1"
+        temperature: 0.3
+        max_tokens: 2000
+
       # Video download settings
       download:
         # Output directory for downloaded videos
@@ -27,7 +35,19 @@ modules:
         # Cookie files for authenticated download
         cookies:
           bilibili: "config/cookies/bilibili_cookies.txt"
+          douyin: "config/cookies/douyin_cookies.txt"
           youtube: "config/cookies/youtube_cookies.txt"
+
+      # Authentication settings
+      auth:
+        enabled: true
+        providers:
+          bilibili:
+            enabled: true
+            timeout: 180  # QR code timeout in seconds
+            poll_interval: 2  # Polling interval in seconds
+          douyin:
+            enabled: true  # Manual cookie import
 
       # Audio extraction settings
       audio:
@@ -69,6 +89,17 @@ modules:
         # Include key points
         key_points: true
 
+      # Frame extraction settings
+      frame_extraction:
+        # Enable frame extraction for chapters
+        enabled: true
+        # Output directory for extracted frames
+        output_dir: "data/frames"
+        # Image format (jpg or png)
+        format: "jpg"
+        # JPEG quality (1-100, higher = better quality)
+        quality: 85
+
     # CLI command configuration
     cli:
       command_name: "video"
@@ -77,36 +108,51 @@ modules:
         - "v"
         - "vid"
 
-  # Link Learning Module (Planned)
+  # Link Learning Module
   link_learning:
-    enabled: false
+    enabled: true
     priority: 2
 
     config:
-      # Web scraping settings
-      scraper:
-        # Timeout in seconds
-        timeout: 10
-        # User agent
-        user_agent: "LearningAssistant/0.1.0"
-        # Enable JavaScript rendering (playwright)
-        js_rendering: false
+      # Web fetching settings
+      fetcher:
+        timeout: 30
+        max_retries: 3
+        retry_delay: 2
+        use_playwright: false
+        user_agent: null
+        proxy: null
 
       # Content parsing settings
       parser:
-        # Content extraction method (trafilatura, readability)
-        method: "trafilatura"
-        # Minimum content length
-        min_length: 100
+        engine: "trafilatura"
+        include_comments: false
+        include_tables: true
+        favor_precision: true
+        min_content_length: 10  # Temporarily lowered for testing
 
-      # Learning card settings
-      card:
-        # Generate Q&A
-        qa: true
-        # Generate quiz
-        quiz: true
-        # Learning path recommendation
-        learning_path: true
+      # LLM settings
+      llm:
+        provider: "openai"
+        model: "kimi-k2.5"
+        base_url: "https://api.tamako.online/v1"
+        temperature: 0.3
+        max_tokens: 2000
+
+      # Output settings
+      output:
+        format:
+          - "markdown"
+          - "json"
+        directory: "data/outputs/link"
+        save_history: true
+
+      # Feature toggles
+      features:
+        generate_qa: true
+        generate_quiz: true
+        extract_tags: true
+        estimate_difficulty: true
 
     cli:
       command_name: "link"
@@ -115,31 +161,51 @@ modules:
         - "l"
         - "article"
 
-  # Vocabulary Module (Planned)
+  # Vocabulary Module
   vocabulary:
-    enabled: false
+    enabled: true
     priority: 3
 
     config:
       # Word extraction settings
       extraction:
-        # Minimum word length
-        min_length: 3
-        # Maximum words per session
-        max_words: 20
-        # Difficulty level (beginner, intermediate, advanced)
-        level: "intermediate"
+        word_count: 10
+        difficulty_distribution:
+          beginner: 30%
+          intermediate: 50%
+          advanced: 20%
+        min_word_length: 3
+        exclude_stopwords: true
 
-      # Word card settings
-      card:
-        # Include phonetics
-        phonetics: true
-        # Include examples
-        examples: true
-        # Include synonyms
-        synonyms: true
-        # Generate contextual text
-        contextual_text: true
+      # Phonetic lookup settings
+      phonetic:
+        lookup_order:
+          - local
+          - api
+          - llm
+        local_dictionary: "data/dictionaries/english.json"
+        api_url: "https://api.dictionaryapi.dev/api/v2/entries/en/"
+
+      # LLM settings
+      llm:
+        provider: "${LLM_PROVIDER:openai}"
+        model: "${LLM_MODEL:gpt-4}"
+        temperature: 0.3
+        max_tokens: 4000
+
+      # Story generation settings
+      story:
+        enabled: true
+        default_word_count: 300
+        default_difficulty: "intermediate"
+
+      # Output settings
+      output:
+        format:
+          - markdown
+          - json
+        directory: "data/outputs/vocabulary"
+        save_history: true
 
     cli:
       command_name: "vocabulary"

@@ -5,8 +5,8 @@ This module defines the abstract base class for all LLM provider implementations
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -17,8 +17,8 @@ class LLMResponse:
 
     content: str
     model: str
-    usage: Dict[str, int]  # {"prompt_tokens": int, "completion_tokens": int}
-    metadata: Dict[str, Any] = {}
+    usage: dict[str, int]  # {"prompt_tokens": int, "completion_tokens": int}
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseLLMProvider(ABC):
@@ -75,7 +75,7 @@ class BaseLLMProvider(ABC):
         pass
 
     @abstractmethod
-    def estimate_cost(self, usage: Dict[str, int]) -> float:
+    def estimate_cost(self, usage: dict[str, int]) -> float:
         """
         Estimate cost based on token usage.
 

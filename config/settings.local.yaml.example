@@ -1,0 +1,38 @@
+# Learning Assistant - Local Settings (SENSITIVE - DO NOT COMMIT)
+# Version: 0.1.0
+#
+# This file contains sensitive information like API keys.
+# Add this file to .gitignore to prevent accidental commits.
+#
+# Usage:
+# 1. Copy this file to settings.local.yaml
+# 2. Fill in your API keys
+# 3. This file will override settings.yaml
+
+# LLM Provider Settings (with real API keys)
+llm:
+  default_provider: "openai"
+
+  providers:
+    openai:
+      # Your OpenAI API key
+      api_key: "REDACTED_API_KEY"
+
+      # Custom base URL (optional, for non-OpenAI endpoints)
+      base_url: "https://api.tamako.online/v1"
+
+      # Default model
+      default_model: "kimi-k2.5"
+
+    anthropic:
+      # Your Anthropic API key
+      # api_key: "sk-ant-xxxxx"
+
+    deepseek:
+      # Your DeepSeek API key
+      # api_key: "sk-xxxxx"
+
+# You can override any settings from settings.yaml here
+# For example:
+# app:
+#   log_level: "DEBUG"

@@ -1,0 +1,32 @@
+name: video_summary
+type: module
+module_name: learning_assistant.modules.video_summary
+version: 0.1.0
+description: Video content summarization module with download, transcription, and LLM summarization
+enabled: true
+priority: 10
+
+config:
+  output_dir: data/outputs/video_summary
+  temp_dir: data/temp
+  download_dir: data/downloads
+  whisper_model: base
+  language: auto
+  max_video_duration: 3600  # 1 hour
+  supported_platforms:
+    - bilibili
+    - youtube
+    - douyin
+
+dependencies: []
+
+cli_commands:
+  video:
+    handler: execute
+    description: Summarize video content from URL
+
+capabilities:
+  - video_download
+  - audio_extraction
+  - transcription
+  - summarization

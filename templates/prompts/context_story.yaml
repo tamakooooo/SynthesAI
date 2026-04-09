@@ -1,0 +1,124 @@
+---
+name: context_story
+version: "1.0"
+language: zh
+description: 生成包含目标单词的上下文短文以巩固记忆
+
+variables:
+  - name: words
+    type: array
+    required: true
+    description: 目标单词列表
+  - name: theme
+    type: string
+    required: false
+    default: ""
+    description: 短文主题（可选）
+  - name: word_count
+    type: integer
+    required: true
+    default: 300
+    description: 短文字数
+  - name: difficulty
+    type: string
+    required: true
+    default: "intermediate"
+    description: 短文难度
+
+output_format: json
+---
+
+system: |
+  你是一位专业的英语写作教师，擅长创作有趣、实用的短文来帮助学习者巩固词汇记忆。
+
+user: |
+  请创作一篇包含以下目标单词的英语短文。
+
+  ## 目标单词
+  {{words}}
+
+  ## 短文要求
+
+  1. **主题**: {{theme}}（如果不指定，自动选择合适的主题）
+  2. **长度**: 约 {{word_count}} 字
+  3. **难度**: {{difficulty}}
+  4. **内容要求**:
+     - 所有目标单词必须自然融入短文
+     - 句子通顺、逻辑连贯
+     - 故事有趣、易于记忆
+     - 避免生硬堆砌单词
+     - 适当使用连接词，保持流畅
+
+  ## 单词使用原则
+
+  - 单词应自然出现在合适的语境中
+  - 不要为了使用单词而强行造句
+  - 确保单词的用法准确、地道
+  - 可以添加适量简单词汇作为连接
+
+  ## 输出格式
+
+  请严格按照以下 JSON Schema 输出：
+
+  ```json
+  {
+    "title": "短文标题",
+    "content": "短文内容...",
+    "word_count": 300,
+    "difficulty": "intermediate",
+    "target_words": ["word1", "word2", "..."],
+    "word_usage": [
+      {
+        "word": "example",
+        "sentence": "This is an example sentence.",
+        "context": "单词在短文中的用法说明"
+      }
+    ]
+  }
+  ```
+
+  ## 示例
+
+  目标单词: ["innovative", "revolutionary", "transform"]
+
+  输出:
+  ```json
+  {
+    "title": "The Innovative Revolution",
+    "content": "In the heart of Silicon Valley, a small startup was working on an innovative solution to transform urban transportation. Their revolutionary approach combined artificial intelligence with sustainable energy. The team believed their technology could transform the way people commute in cities worldwide...",
+    "word_count": 285,
+    "difficulty": "intermediate",
+    "target_words": ["innovative", "revolutionary", "transform"],
+    "word_usage": [
+      {
+        "word": "innovative",
+        "sentence": "a small startup was working on an innovative solution",
+        "context": "形容解决方案的创新性"
+      },
+      {
+        "word": "revolutionary",
+        "sentence": "Their revolutionary approach combined...",
+        "context": "描述方法的革命性"
+      },
+      {
+        "word": "transform",
+        "sentence": "their technology could transform the way people commute",
+        "context": "表示改变、转变"
+      }
+    ]
+  }
+  ```
+
+  ## 注意事项
+
+  1. **自然性**: 故事应有连贯性，不要碎片化
+  2. **可读性**: 句子难度适中，易于理解
+  3. **教育性**: 展示单词的正确用法
+  4. **趣味性**: 内容有趣，便于记忆
+
+  ## 重要提示
+
+  - 输出必须是合法的 JSON 格式
+  - 不要输出任何额外文本或说明
+  - 所有目标单词必须在短文中出现
+  - word_usage 数组应记录每个单词的用法

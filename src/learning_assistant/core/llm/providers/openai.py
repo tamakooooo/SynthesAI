@@ -4,9 +4,10 @@ OpenAI Provider for Learning Assistant.
 This module provides OpenAI API integration using official SDK.
 """
 
-from typing import Any, Dict
-from openai import OpenAI
+from typing import Any
+
 from loguru import logger
+from openai import OpenAI
 
 from learning_assistant.core.llm.base import BaseLLMProvider, LLMResponse
 
@@ -37,10 +38,21 @@ class OpenAIProvider(BaseLLMProvider):
             model: Model name (gpt-4o, gpt-4-turbo, gpt-3.5-turbo)
             **kwargs: Additional parameters (base_url, timeout, etc.)
         """
-        self.client = OpenAI(api_key=api_key)
+        # Extract base_url for custom endpoints
+        base_url = kwargs.get("base_url")
+
+        # Initialize OpenAI client with base_url if provided
+        if base_url:
+            self.client = OpenAI(api_key=api_key, base_url=base_url)
+            logger.info(
+                f"OpenAI provider initialized with model: {model}, base_url: {base_url}"
+            )
+        else:
+            self.client = OpenAI(api_key=api_key)
+            logger.info(f"OpenAI provider initialized with model: {model}")
+
         self.model = model
         self.kwargs = kwargs
-        logger.info(f"OpenAI provider initialized with model: {model}")
 
     def call(self, prompt: str, **kwargs: Any) -> LLMResponse:
         """
@@ -48,24 +60,81 @@ class OpenAIProvider(BaseLLMProvider):
 
         Args:
             prompt: Prompt string
-            **kwargs: Additional call parameters
+            **kwargs: Additional call parameters (temperature, max_tokens, etc.)
 
         Returns:
             LLM response
         """
-        # TODO: Implement OpenAI API call (Week 2 Day 1-3)
-        # Use self.client.chat.completions.create()
-        pass
+        logger.debug(f"Calling OpenAI API with prompt length: {len(prompt)}")
+
+        # Extract parameters
+        temperature = kwargs.get("temperature", 0.7)
+        max_tokens = kwargs.get("max_tokens", 2000)
+
+        # Call OpenAI API
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        # Extract response content
+        content = response.choices[0].message.content or ""
+
+        # Extract usage information (handle None case)
+        if response.usage is not None:
+            usage = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+        else:
+            # Fallback if usage information is not provided
+            usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            logger.warning("OpenAI API response missing usage information")
+
+        logger.info(
+            f"OpenAI API call completed: model={self.model}, "
+            f"tokens={usage['total_tokens']}, "
+            f"cost=${self.estimate_cost(usage):.4f}"
+        )
+
+        return LLMResponse(
+            content=content,
+            model=self.model,
+            usage=usage,
+            metadata={
+                "finish_reason": response.choices[0].finish_reason,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        )
 
     def validate_api_key(self) -> bool:
         """
-        Validate OpenAI API key.
+        Validate OpenAI API key by making a test request.
 
         Returns:
             True if valid, False otherwise
         """
-        # TODO: Implement API key validation (Week 2 Day 1-3)
-        return False
+        logger.debug("Validating OpenAI API key")
+
+        try:
+            # Make a minimal API call to validate the key
+            _response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": "test"}],
+                max_tokens=5,
+            )
+
+            # If we got a response, the key is valid
+            logger.info("OpenAI API key validation successful")
+            return True
+
+        except Exception as e:
+            logger.error(f"OpenAI API key validation failed: {e}")
+            return False
 
     def get_available_models(self) -> list[str]:
         """
@@ -76,7 +145,7 @@ class OpenAIProvider(BaseLLMProvider):
         """
         return list(self.PRICING.keys())
 
-    def estimate_cost(self, usage: Dict[str, int]) -> float:
+    def estimate_cost(self, usage: dict[str, int]) -> float:
         """
         Estimate cost based on token usage.
 
@@ -86,5 +155,19 @@ class OpenAIProvider(BaseLLMProvider):
         Returns:
             Estimated cost in USD
         """
-        # TODO: Implement cost estimation (Week 2 Day 1-3)
-        return 0.0
+        # Get pricing for current model
+        pricing = self.PRICING.get(self.model)
+
+        if not pricing:
+            logger.warning(f"No pricing data for model: {self.model}")
+            return 0.0
+
+        # Calculate cost
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+
+        cost = (prompt_tokens * pricing["input"] / 1000) + (
+            completion_tokens * pricing["output"] / 1000
+        )
+
+        return cost

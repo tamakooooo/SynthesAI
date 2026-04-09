@@ -5,8 +5,8 @@ This module defines the abstract base class for all module plugins.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
-from pathlib import Path
+from typing import Any
+
 from loguru import logger
 
 from learning_assistant.core.event_bus import EventBus
@@ -32,7 +32,7 @@ class BaseModule(ABC):
         pass
 
     @abstractmethod
-    def initialize(self, config: Dict[str, Any], event_bus: EventBus) -> None:
+    def initialize(self, config: dict[str, Any], event_bus: EventBus) -> None:
         """
         Initialize module with configuration and event bus.
 
@@ -43,7 +43,7 @@ class BaseModule(ABC):
         pass
 
     @abstractmethod
-    def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, input_data: dict[str, Any]) -> dict[str, Any]:
         """
         Execute module core functionality.
 
@@ -66,13 +66,14 @@ class BaseModule(ABC):
         """
         Register CLI commands for this module (optional).
 
+        Override this method to add CLI commands.
+
         Args:
             cli_group: Typer CLI group to register commands to
         """
-        # Default: no CLI commands
-        pass
+        # Optional: subclasses can override to register CLI commands
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """
         Get module metadata.
 
@@ -96,11 +97,11 @@ class VideoSummaryModule(BaseModule):
     def name(self) -> str:
         return "video_summary"
 
-    def initialize(self, config: Dict[str, Any], event_bus: EventBus) -> None:
+    def initialize(self, config: dict[str, Any], event_bus: EventBus) -> None:
         logger.info(f"Initializing {self.name} module")
         # TODO: Implement initialization (Week 3 Day 27-28)
 
-    def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, input_data: dict[str, Any]) -> dict[str, Any]:
         logger.info(f"Executing {self.name} module")
         # TODO: Implement execution (Week 3-4)
         return {}

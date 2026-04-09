@@ -1,0 +1,128 @@
+name: link_summary
+version: 1.0
+language: zh
+description: 网页内容总结和知识卡片生成
+
+template: |
+  你是一位专业的知识整理助手。请分析以下网页内容，生成结构化的知识卡片。
+
+  ## 网页内容
+  标题：{{ title }}
+  来源：{{ source }}
+  字数：{{ word_count }}
+  正文：
+  {{ content }}
+
+  ## 任务要求
+  1. **摘要**：生成200字左右的摘要，概括核心内容
+  2. **核心要点**：提取3-5个最重要的知识点
+  3. **标签**：生成3-5个相关标签（技术领域、主题、难度等）
+  4. **难度评估**：评估内容难度（beginner/intermediate/advanced）
+  5. **问答生成**：生成3个基于内容的问答对
+  6. **测验题**：生成2个测验题（多选题）
+
+  ## 输出格式（JSON）
+  请严格按照以下 JSON Schema 输出：
+  ```json
+  {
+    "summary": "200字摘要",
+    "key_points": ["要点1", "要点2", "要点3"],
+    "tags": ["标签1", "标签2", "标签3"],
+    "difficulty": "intermediate",
+    "qa_pairs": [
+      {
+        "question": "问题1",
+        "answer": "答案1",
+        "difficulty": "medium"
+      }
+    ],
+    "quiz": [
+      {
+        "type": "multiple_choice",
+        "question": "测验题1",
+        "options": ["A", "B", "C", "D"],
+        "correct": "A",
+        "explanation": "解释"
+      }
+    ]
+  }
+  ```
+
+  ## 注意事项
+  - 摘要应准确概括内容，不要添加原文没有的信息
+  - 核心要点应是最重要的知识点，不是细节
+  - 标签应简洁准确，便于分类和检索
+  - 问答和测验应基于原文内容，不要引入外部知识
+
+variables:
+  - name: title
+    type: string
+    required: true
+    description: 网页标题
+  - name: source
+    type: string
+    required: true
+    description: 来源网站
+  - name: word_count
+    type: integer
+    required: true
+    description: 字数
+  - name: content
+    type: string
+    required: true
+    description: 正文内容
+
+output_format: json
+json_schema:
+  type: object
+  properties:
+    summary:
+      type: string
+      minLength: 100
+      maxLength: 300
+    key_points:
+      type: array
+      items:
+        type: string
+      minItems: 3
+      maxItems: 5
+    tags:
+      type: array
+      items:
+        type: string
+      minItems: 3
+      maxItems: 5
+    difficulty:
+      type: string
+      enum: [beginner, intermediate, advanced]
+    qa_pairs:
+      type: array
+      items:
+        type: object
+        properties:
+          question:
+            type: string
+          answer:
+            type: string
+          difficulty:
+            type: string
+            enum: [easy, medium, hard]
+    quiz:
+      type: array
+      items:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: [multiple_choice, true_false, fill_blank]
+          question:
+            type: string
+          options:
+            type: array
+            items:
+              type: string
+          correct:
+            type: string
+          explanation:
+            type: string
+  required: [summary, key_points, tags, difficulty, qa_pairs, quiz]

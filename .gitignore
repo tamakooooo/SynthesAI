@@ -91,6 +91,11 @@ Thumbs.db
 secrets.yaml
 .env.local
 .env.*.local
+settings.local.yaml  # Local settings with API keys
+
+# Authentication cookies
+config/cookies/*.txt
+!config/cookies/.gitkeep
 
 # Video/Audio files (large)
 *.mp4

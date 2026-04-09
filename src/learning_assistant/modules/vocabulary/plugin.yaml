@@ -1,0 +1,53 @@
+name: vocabulary
+type: module
+version: 0.1.0
+description: Vocabulary Learning Module - Extract vocabulary from content and generate word cards
+author: Learning Assistant Team
+enabled: true
+priority: 3
+
+dependencies: []
+
+config:
+  extraction:
+    word_count: 10
+    difficulty_distribution:
+      beginner: 30%
+      intermediate: 50%
+      advanced: 20%
+    min_word_length: 3
+    exclude_stopwords: true
+
+  phonetic:
+    lookup_order:
+      - local
+      - api
+      - llm
+    local_dictionary: "data/dictionaries/english.json"
+    api_url: "https://api.dictionaryapi.dev/api/v2/entries/en/"
+
+  llm:
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.3
+    max_tokens: 4000
+
+  story:
+    enabled: true
+    default_word_count: 300
+    default_difficulty: "intermediate"
+
+  output:
+    format:
+      - markdown
+      - json
+    directory: "data/outputs/vocabulary"
+    save_history: true
+
+cli_commands:
+  vocabulary:
+    handler: execute
+    description: Extract vocabulary and generate word cards
+    aliases:
+      - vocab
+      - words

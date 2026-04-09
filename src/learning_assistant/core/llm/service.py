@@ -4,13 +4,15 @@ LLM Service for Learning Assistant.
 This module provides a unified interface for multiple LLM providers using official SDKs.
 """
 
-from typing import Any, Dict, Optional
+import time
+from typing import Any
+
 from loguru import logger
 
 from learning_assistant.core.llm.base import BaseLLMProvider, LLMResponse
-from learning_assistant.core.llm.providers.openai import OpenAIProvider
 from learning_assistant.core.llm.providers.anthropic import AnthropicProvider
 from learning_assistant.core.llm.providers.deepseek import DeepSeekProvider
+from learning_assistant.core.llm.providers.openai import OpenAIProvider
 
 
 class LLMService:
@@ -21,14 +23,14 @@ class LLMService:
     - Unified interface for multiple providers
     - Provider switching
     - Cost tracking
-    - Retry mechanism
+    - Retry mechanism with exponential backoff
     - Response caching
 
     Uses official SDKs only (no third-party layers like LiteLLM).
     """
 
     # Provider registry
-    PROVIDERS = {
+    PROVIDERS: dict[str, type[BaseLLMProvider]] = {
         "openai": OpenAIProvider,
         "anthropic": AnthropicProvider,
         "deepseek": DeepSeekProvider,
@@ -39,6 +41,8 @@ class LLMService:
         provider: str,
         api_key: str,
         model: str,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
         **kwargs: Any,
     ) -> None:
         """
@@ -48,6 +52,8 @@ class LLMService:
             provider: Provider name (openai, anthropic, deepseek)
             api_key: API key
             model: Model name
+            max_retries: Maximum number of retries on failure (default: 3)
+            retry_delay: Initial retry delay in seconds (default: 1.0, exponential backoff)
             **kwargs: Additional provider-specific parameters
 
         Raises:
@@ -61,6 +67,10 @@ class LLMService:
         self.provider_name = provider
         self.model = model
 
+        # Retry configuration
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
         # Cost tracking
         self.total_cost = 0.0
         self.daily_cost = 0.0
@@ -68,12 +78,15 @@ class LLMService:
         # Statistics
         self.call_count = 0
         self.total_tokens = 0
+        self.retry_count = 0
 
         logger.info(f"LLMService initialized with provider: {provider}, model: {model}")
 
     def call(self, prompt: str, **kwargs: Any) -> LLMResponse:
         """
         Call LLM API with prompt.
+
+        Implements retry mechanism with exponential backoff.
 
         Args:
             prompt: Prompt string
@@ -83,25 +96,52 @@ class LLMService:
             LLM response
 
         Raises:
-            Exception: If call fails after retries
+            Exception: If call fails after all retries
         """
         logger.info(f"Calling LLM: {self.provider_name}/{self.model}")
 
-        # TODO: Implement retry mechanism (Week 2 Day 1-3)
-        response = self.provider.call(prompt, **kwargs)
+        # Retry loop
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self.provider.call(prompt, **kwargs)
 
-        # Update statistics
-        self.call_count += 1
-        self.total_tokens += response.usage.get("total_tokens", 0)
+                # Update statistics
+                self.call_count += 1
+                self.total_tokens += response.usage.get("total_tokens", 0)
 
-        # Update cost tracking
-        cost = self.provider.estimate_cost(response.usage)
-        self.total_cost += cost
-        self.daily_cost += cost
+                # Update cost tracking
+                cost = self.provider.estimate_cost(response.usage)
+                self.total_cost += cost
+                self.daily_cost += cost
 
-        logger.info(f"LLM call completed: tokens={response.usage}, cost=${cost:.4f}")
+                logger.info(
+                    f"LLM call completed: tokens={response.usage}, cost=${cost:.4f}"
+                )
 
-        return response
+                return response
+
+            except Exception as e:
+                # Check if this is the last attempt
+                if attempt == self.max_retries:
+                    logger.error(
+                        f"LLM call failed after {self.max_retries + 1} attempts: {e}"
+                    )
+                    raise
+
+                # Calculate retry delay with exponential backoff
+                delay = self.retry_delay * (2**attempt)
+                self.retry_count += 1
+
+                logger.warning(
+                    f"LLM call failed (attempt {attempt + 1}/{self.max_retries + 1}), "
+                    f"retrying in {delay:.1f}s: {e}"
+                )
+
+                # Wait before retrying
+                time.sleep(delay)
+
+        # This should never be reached, but raise exception for safety
+        raise Exception("LLM call failed after all retries")
 
     def validate_api_key(self) -> bool:
         """
@@ -122,7 +162,7 @@ class LLMService:
         """
         return self.provider.get_available_models()
 
-    def estimate_cost(self, usage: Dict[str, int]) -> float:
+    def estimate_cost(self, usage: dict[str, int]) -> float:
         """
         Estimate cost for given token usage.
 
@@ -134,7 +174,7 @@ class LLMService:
         """
         return self.provider.estimate_cost(usage)
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """
         Get usage statistics.
 
@@ -148,6 +188,8 @@ class LLMService:
             "total_tokens": self.total_tokens,
             "total_cost": self.total_cost,
             "daily_cost": self.daily_cost,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
         }
 
     def reset_daily_cost(self) -> None:
