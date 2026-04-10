@@ -28,7 +28,7 @@
 {% if chapter.start_time %}> ⏱️ {{chapter.start_time}}{% if chapter.end_time %} - {{chapter.end_time}}{% endif %}{% endif %}
 
 {% if chapter.screenshot_path %}
-![{{chapter.title}}](../frames/{{chapter.screenshot_path}})
+![{{chapter.title}}]({{chapter.screenshot_path}})
 
 {% endif %}
 {{chapter.summary}}

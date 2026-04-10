@@ -14,16 +14,16 @@ from loguru import logger
 from learning_assistant.core.base_module import BaseModule
 from learning_assistant.core.event_bus import EventBus
 from learning_assistant.core.exporters import MarkdownExporter
+from learning_assistant.core.exporters.visual_card import VisualCardGenerator
 from learning_assistant.core.history_manager import HistoryManager
 from learning_assistant.core.llm.service import LLMService
 from learning_assistant.core.prompt_manager import PromptManager
 from learning_assistant.modules.link_learning.content_fetcher import ContentFetcher
 from learning_assistant.modules.link_learning.content_parser import ContentParser
 from learning_assistant.modules.link_learning.models import (
+    KeyConcept,
     KnowledgeCard,
     LinkContent,
-    QAPair,
-    QuizQuestion,
 )
 
 
@@ -49,6 +49,7 @@ class LinkLearningModule(BaseModule):
         self.content_parser: ContentParser | None = None
         self.prompt_manager: PromptManager | None = None
         self.exporter: MarkdownExporter | None = None
+        self.card_generator: VisualCardGenerator | None = None
         self.llm_service: LLMService | None = None
         self.history_manager: HistoryManager | None = None
 
@@ -79,15 +80,39 @@ class LinkLearningModule(BaseModule):
         """Initialize all components."""
         import os
 
+        from learning_assistant.core.config_manager import ConfigManager
+
         # LLM service (must be initialized first for PromptManager)
         llm_config = self.config.get("llm", {})
         provider = llm_config.get("provider", "openai")
 
-        # Get API key from environment
+        # Get API key with priority: env var > config file > global settings
+        api_key = None
         api_key_env = f"{provider.upper()}_API_KEY"
+
+        # 1. Try environment variable first (highest priority)
         api_key = os.environ.get(api_key_env)
+
+        # 2. Try module config file
+        if not api_key and "api_key" in llm_config:
+            api_key = llm_config["api_key"]
+
+        # 3. Try global settings via ConfigManager
         if not api_key:
-            raise ValueError(f"API key not found: {api_key_env}")
+            try:
+                config_manager = ConfigManager()
+                config_manager.load_all()
+                global_llm_config = config_manager.get_llm_config(provider)
+                api_key = global_llm_config.get("api_key")
+            except Exception as e:
+                logger.debug(f"Failed to get API key from global config: {e}")
+
+        if not api_key:
+            raise ValueError(
+                f"API key not found. Set {api_key_env} environment variable, "
+                f"add 'api_key' to link_learning.llm config, "
+                f"or configure it in settings.local.yaml"
+            )
 
         # Build LLM kwargs with base_url from config
         llm_kwargs = {}
@@ -138,6 +163,13 @@ class LinkLearningModule(BaseModule):
             template_dir=Path("templates/outputs"),
             template_name="link_summary.md",
         )
+
+        # Visual knowledge card generator
+        card_config = output_config.get("knowledge_card", {})
+        if card_config.get("enabled", True):
+            self.card_generator = VisualCardGenerator(
+                width=card_config.get("width", 1200),
+            )
 
         # History manager
         self.history_manager = HistoryManager(
@@ -233,25 +265,13 @@ class LinkLearningModule(BaseModule):
         # Parse JSON response
         card_data = self._parse_llm_response(response.content)
 
-        # Convert qa_pairs and quiz to objects
-        qa_pairs = [
-            QAPair(
-                question=qa["question"],
-                answer=qa["answer"],
-                difficulty=qa.get("difficulty", "medium"),
+        # Convert key_concepts to objects
+        key_concepts = [
+            KeyConcept(
+                term=concept["term"],
+                definition=concept["definition"],
             )
-            for qa in card_data.get("qa_pairs", [])
-        ]
-
-        quiz = [
-            QuizQuestion(
-                type=q["type"],
-                question=q["question"],
-                correct=q["correct"],
-                options=q.get("options"),
-                explanation=q.get("explanation"),
-            )
-            for q in card_data.get("quiz", [])
+            for concept in card_data.get("key_concepts", [])
         ]
 
         # Build knowledge card
@@ -261,13 +281,12 @@ class LinkLearningModule(BaseModule):
             source=link_content.source,
             summary=card_data["summary"],
             key_points=card_data["key_points"],
+            key_concepts=key_concepts,
             tags=card_data["tags"],
             word_count=link_content.word_count,
             reading_time=self._estimate_reading_time(link_content.word_count),
             difficulty=card_data["difficulty"],
             created_at=datetime.now(),
-            qa_pairs=qa_pairs,
-            quiz=quiz,
         )
 
         return knowledge_card
@@ -299,7 +318,7 @@ class LinkLearningModule(BaseModule):
             data = json.loads(json_str)
 
             # Validate required fields
-            required_fields = ["summary", "key_points", "tags", "difficulty"]
+            required_fields = ["summary", "key_points", "key_concepts", "tags", "difficulty"]
             for field in required_fields:
                 if field not in data:
                     raise ValueError(f"Missing required field: {field}")
@@ -332,6 +351,23 @@ class LinkLearningModule(BaseModule):
             remaining_minutes = minutes % 60
             return f"{hours}小时{remaining_minutes}分钟"
 
+    def _sanitize_filename(self, filename: str) -> str:
+        """
+        Sanitize filename by removing illegal characters.
+
+        Args:
+            filename: Original filename
+
+        Returns:
+            Sanitized filename safe for all platforms
+        """
+        # Windows illegal characters: < > : " / \ | ? *
+        illegal_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
+        for char in illegal_chars:
+            filename = filename.replace(char, '_')
+        # Remove leading/trailing spaces and dots
+        return filename.strip('. ')
+
     async def _export_and_save(self, knowledge_card: KnowledgeCard) -> None:
         """
         Export and save knowledge card.
@@ -343,8 +379,10 @@ class LinkLearningModule(BaseModule):
         output_dir = Path("data/outputs/link")
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Sanitize title for filename
+        safe_title = self._sanitize_filename(knowledge_card.title[:50])
         filename = (
-            f"{knowledge_card.title[:50]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            f"{safe_title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
         )
         output_path = output_dir / filename
 
@@ -353,6 +391,54 @@ class LinkLearningModule(BaseModule):
             output_path=output_path,
         )
         logger.info(f"Exported to: {output_path}")
+
+        # Generate knowledge card image
+        if self.card_generator:
+            try:
+                card_filename = (
+                    f"{safe_title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                )
+                card_path = output_dir / card_filename
+
+                # Prepare key concepts for visual card
+                key_concepts_data = [
+                    {"term": concept.term, "definition": concept.definition}
+                    for concept in knowledge_card.key_concepts
+                ]
+
+                # Generate HTML template first (PNG rendering needs browser)
+                html_content = self.card_generator.generate_card_html(
+                    title=knowledge_card.title,
+                    summary=knowledge_card.summary,
+                    key_points=knowledge_card.key_points,
+                    key_concepts=key_concepts_data,
+                    tags=knowledge_card.tags,
+                    source=knowledge_card.source,
+                    url=knowledge_card.url,
+                )
+
+                # Save HTML template
+                html_path = card_path.with_suffix(".html")
+                html_path.parent.mkdir(parents=True, exist_ok=True)
+                html_path.write_text(html_content, encoding="utf-8")
+                logger.info(f"Visual knowledge card HTML saved to: {html_path}")
+
+                # Try to render PNG if Playwright is available
+                try:
+                    await self.card_generator.render_html_to_image(
+                        html_content=html_content,
+                        output_path=card_path.with_suffix(".png"),
+                        width=1200,
+                        scale=2.0,
+                    )
+                    logger.info(f"Visual knowledge card PNG saved to: {card_path}.png")
+                except ImportError:
+                    logger.info("Playwright not installed, HTML template only")
+                except Exception as e:
+                    logger.warning(f"PNG rendering failed: {e}, HTML template available")
+
+            except Exception as e:
+                logger.warning(f"Failed to generate visual knowledge card: {e}")
 
         # Save to history
         self.history_manager.add_record(

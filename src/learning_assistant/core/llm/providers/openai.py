@@ -67,9 +67,12 @@ class OpenAIProvider(BaseLLMProvider):
         """
         logger.debug(f"Calling OpenAI API with prompt length: {len(prompt)}")
 
-        # Extract parameters
-        temperature = kwargs.get("temperature", 0.7)
-        max_tokens = kwargs.get("max_tokens", 2000)
+        # Merge initialization kwargs with call kwargs (call kwargs take precedence)
+        merged_kwargs = {**self.kwargs, **kwargs}
+
+        # Extract parameters with defaults
+        temperature = merged_kwargs.get("temperature", 0.7)
+        max_tokens = merged_kwargs.get("max_tokens", 2000)
 
         # Call OpenAI API
         response = self.client.chat.completions.create(

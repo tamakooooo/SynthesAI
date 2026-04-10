@@ -1,10 +1,10 @@
 name: link_summary
-version: 1.0
+version: 2.0
 language: zh
-description: 网页内容总结和知识卡片生成
+description: 网页内容总结和专业编辑风格知识卡片生成
 
 template: |
-  你是一位专业的知识整理助手。请分析以下网页内容，生成结构化的知识卡片。
+  你是一位专业的内容总结助手。请分析以下网页内容，生成适合编辑风格知识卡片的内容摘要和结构化要点。
 
   ## 网页内容
   标题：{{ title }}
@@ -14,45 +14,51 @@ template: |
   {{ content }}
 
   ## 任务要求
-  1. **摘要**：生成200字左右的摘要，概括核心内容
-  2. **核心要点**：提取3-5个最重要的知识点
-  3. **标签**：生成3-5个相关标签（技术领域、主题、难度等）
-  4. **难度评估**：评估内容难度（beginner/intermediate/advanced）
-  5. **问答生成**：生成3个基于内容的问答对
-  6. **测验题**：生成2个测验题（多选题）
+
+  1. **内容摘要**：用一段文字（300-500字）详细概括原文的核心内容，准确描述原文的主要功能和特性，适合作为知识卡片的主要内容展示
+
+  2. **核心要点**：提取4-6个最重要的要点，**每个要点采用"关键词：详细描述"的格式**
+     - 关关键词：简洁明确（3-8个字），适合作为卡片标题
+     - 详细描述：具体内容说明（15-30个字），适合作为卡片内容
+     - 示例："专为 NAS 用户：针对网络附属存储场景优化，满足私人影音库需求"
+
+  3. **关键概念解释**：识别原文中提到的2-3个重要术语或概念，提供详细解释
+     - 概念名称：原文中明确提到的术语
+     - 定义解释：50-150字的详细定义或解释，帮助读者理解
+
+  4. **标签**：生成3-5个相关标签（技术领域、主题等）
+
+  5. **难度评估**：评估内容难度（beginner/intermediate/advanced）
 
   ## 输出格式（JSON）
   请严格按照以下 JSON Schema 输出：
   ```json
   {
-    "summary": "200字摘要",
-    "key_points": ["要点1", "要点2", "要点3"],
-    "tags": ["标签1", "标签2", "标签3"],
-    "difficulty": "intermediate",
-    "qa_pairs": [
+    "summary": "一段文字详细概括全文核心内容（300-500字）",
+    "key_points": [
+      "关键词1：详细描述1",
+      "关键词2：详细描述2",
+      "关键词3：详细描述3",
+      "关键词4：详细描述4"
+    ],
+    "key_concepts": [
       {
-        "question": "问题1",
-        "answer": "答案1",
-        "difficulty": "medium"
+        "term": "概念名称（原文中提到的）",
+        "definition": "详细定义或解释（50-150字）"
       }
     ],
-    "quiz": [
-      {
-        "type": "multiple_choice",
-        "question": "测验题1",
-        "options": ["A", "B", "C", "D"],
-        "correct": "A",
-        "explanation": "解释"
-      }
-    ]
+    "tags": ["标签1", "标签2", "标签3"],
+    "difficulty": "intermediate"
   }
   ```
 
   ## 注意事项
-  - 摘要应准确概括内容，不要添加原文没有的信息
-  - 核心要点应是最重要的知识点，不是细节
+  - 摘要应准确概括原文内容，不要添加原文没有的信息
+  - 核心要点必须采用"关键词：详细描述"格式，便于卡片布局展示
+  - 关关键词要简洁有力，适合作为独立的卡片标题
+  - 详细描述要具体明确，让读者快速理解要点内容
+  - 关键概念只解释原文中明确提到的术语，不要引入外部概念
   - 标签应简洁准确，便于分类和检索
-  - 问答和测验应基于原文内容，不要引入外部知识
 
 variables:
   - name: title
@@ -78,51 +84,42 @@ json_schema:
   properties:
     summary:
       type: string
-      minLength: 100
-      maxLength: 300
+      minLength: 300
+      maxLength: 500
+      description: 整篇内容的详细摘要（一段文字）
     key_points:
       type: array
       items:
         type: string
-      minItems: 3
-      maxItems: 5
+        pattern: "^.{3,8}[：:].{15,30}$"
+      minItems: 4
+      maxItems: 6
+      description: 核心要点列表（格式：关键词：详细描述）
+    key_concepts:
+      type: array
+      items:
+        type: object
+        properties:
+          term:
+            type: string
+            description: 原文中提到的概念名称
+          definition:
+            type: string
+            minLength: 50
+            maxLength: 150
+            description: 详细定义或解释
+      minItems: 2
+      maxItems: 3
+      description: 关键概念解释
     tags:
       type: array
       items:
         type: string
       minItems: 3
       maxItems: 5
+      description: 标签列表
     difficulty:
       type: string
       enum: [beginner, intermediate, advanced]
-    qa_pairs:
-      type: array
-      items:
-        type: object
-        properties:
-          question:
-            type: string
-          answer:
-            type: string
-          difficulty:
-            type: string
-            enum: [easy, medium, hard]
-    quiz:
-      type: array
-      items:
-        type: object
-        properties:
-          type:
-            type: string
-            enum: [multiple_choice, true_false, fill_blank]
-          question:
-            type: string
-          options:
-            type: array
-            items:
-              type: string
-          correct:
-            type: string
-          explanation:
-            type: string
-  required: [summary, key_points, tags, difficulty, qa_pairs, quiz]
+      description: 难度评估
+  required: [summary, key_points, key_concepts, tags, difficulty]

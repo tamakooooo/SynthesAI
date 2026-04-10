@@ -6,6 +6,9 @@ author: Learning Assistant Team
 enabled: true
 priority: 3
 
+module_name: learning_assistant.modules.vocabulary
+class_name: VocabularyLearningModule
+
 dependencies: []
 
 config:

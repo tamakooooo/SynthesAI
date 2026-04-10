@@ -9,7 +9,7 @@
 
 ---
 
-## 摘要
+## 内容摘要
 
 {{ summary }}
 
@@ -23,64 +23,26 @@
 
 ---
 
+{% if key_concepts %}
+
+## 关键概念解释
+
+{% for concept in key_concepts %}
+### {{ concept.term }}
+
+{{ concept.definition }}
+
+{% endfor %}
+
+{% endif %}
+
+---
+
 ## 标签
 
 {% for tag in tags %}
 #{{ tag }}{% if not loop.last %} {% endif %}
 {% endfor %}
-
----
-
-{% if qa_pairs %}
-
-## 问答对
-
-{% for qa in qa_pairs %}
-
-### Q{{ loop.index }}: {{ qa.question }}
-
-**难度**: {{ qa.difficulty }}
-
-{{ qa.answer }}
-
-{% endfor %}
-
-{% endif %}
-
----
-
-{% if quiz %}
-
-## 测验题
-
-{% for q in quiz %}
-
-### 问题 {{ loop.index }}
-
-**类型**: {{ q.type }}
-
-{{ q.question }}
-
-{% if q.options %}
-
-**选项**:
-{% for option in q.options %}
-{{ loop.index }}. {{ option }}
-{% endfor %}
-
-{% endif %}
-
-**正确答案**: {{ q.correct }}
-
-{% if q.explanation %}
-
-**解释**: {{ q.explanation }}
-
-{% endif %}
-
-{% endfor %}
-
-{% endif %}
 
 ---
 

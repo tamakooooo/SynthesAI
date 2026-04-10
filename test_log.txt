@@ -1,0 +1,18 @@
+Testing video summary for: https://www.bilibili.com/video/BV18zfCBQERe/
+============================================================
+ 投稿视频  在香港从100万到6个亿，都能住上什么样的房子
+ INFO  开始处理视频 在香港从100万到6个亿，都能住上什么样的房子
+ INFO  共包含以下 6 个视频流：
+ INFO    0 [AVC ] [ 852x480 ] <480P 标清 > #3
+ INFO    1 [HEVC] [ 852x480 ] <480P 标清 > #3
+ INFO    2 [AV1 ] [ 852x480 ] <480P 标清 > #3
+ INFO    3 [HEVC] [ 640x360 ] <360P 流畅 > #3
+ INFO    4 [AVC ] [ 640x360 ] <360P 流畅 > #3
+ INFO    5 [AV1 ] [ 640x360 ] <360P 流畅 > #3
+ INFO  共包含以下 3 个音频流：
+ INFO    0 [MP4A] <128kbps >
+ INFO  * 1 [MP4A] <320kbps >
+ INFO    2 [MP4A] < 64kbps >
+ 弹幕  ASS 弹幕已生成
+ 描述文件  NFO 媒体描述文件已生成
+ INFO  文件 在香港从100万到6个亿，都能住上什么样的房子 已存在

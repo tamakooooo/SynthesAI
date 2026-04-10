@@ -74,12 +74,28 @@ class AgentAPI:
         """
         logger.info("Initializing AgentAPI")
 
+        # 初始化配置管理器
+        from learning_assistant.core.config_manager import ConfigManager
+
+        self.config_manager = ConfigManager()
+        self.config_manager.load_all()
+
         # 初始化插件管理器
         self.plugin_manager = PluginManager(config_path)
-        self.plugin_manager.load_all()
+
+        # 发现并加载所有插件
+        discovered = self.plugin_manager.discover_plugins()
+        for plugin_metadata in discovered:
+            if plugin_metadata.enabled:
+                self.plugin_manager.load_plugin(plugin_metadata.name)
 
         # 初始化历史记录管理器
         self.history_manager = HistoryManager()
+
+        # 初始化事件总线
+        from learning_assistant.core.event_bus import EventBus
+
+        self.event_bus = EventBus()
 
         logger.success("AgentAPI initialized successfully")
 
@@ -129,22 +145,57 @@ class AgentAPI:
         """
         logger.info(f"Summarizing video: {url}")
 
-        # 获取 video_summary 模块
         try:
-            video_module = self.plugin_manager.get_module("video_summary")
-        except Exception as e:
-            logger.error(f"Failed to get video_summary module: {e}")
-            raise SkillNotFoundError(f"video_summary module not found: {e}") from e
+            # 初始化模块
+            from learning_assistant.modules.video_summary import VideoSummaryModule
 
-        # 执行视频总结
-        try:
-            result = await video_module.run(
-                url=url,
-                format=format,
-                language=language,
-                output_dir=output_dir,
+            video_module = VideoSummaryModule()
+            video_config = self.config_manager.modules_model.video_summary.config.copy()
+
+            # Merge global LLM settings with module config
+            if "llm" not in video_config:
+                video_config["llm"] = {}
+
+            # Get global LLM provider settings (contains API key)
+            provider = video_config["llm"].get("provider", "openai")
+            global_llm_settings = self.config_manager.settings_model.llm.providers.get(provider)
+
+            # Convert Pydantic model to dict if needed
+            if global_llm_settings and hasattr(global_llm_settings, 'model_dump'):
+                global_llm_settings_dict = global_llm_settings.model_dump()
+            elif global_llm_settings and hasattr(global_llm_settings, 'dict'):
+                global_llm_settings_dict = global_llm_settings.dict()
+            else:
+                global_llm_settings_dict = global_llm_settings or {}
+
+            # Merge: module config can override global settings
+            video_config["llm"] = {
+                **global_llm_settings_dict,  # Global settings (has api_key)
+                **video_config["llm"],  # Module-specific overrides
+            }
+
+            # 覆盖配置
+            if format:
+                video_config["output"] = video_config.get("output", {})
+                video_config["output"]["format"] = format
+            if output_dir:
+                video_config["output"] = video_config.get("output", {})
+                video_config["output"]["directory"] = output_dir
+
+            video_module.initialize(video_config, self.event_bus)
+
+            # 执行视频总结
+            # 准备输入数据
+            input_data = {
+                "url": url,
+                "format": format,
+                "language": language,
                 **kwargs,
-            )
+            }
+            if output_dir:
+                input_data["output_dir"] = output_dir
+
+            result = video_module.execute(input_data=input_data)
 
             logger.success(f"Video summarization completed: {url}")
 
@@ -414,16 +465,17 @@ class AgentAPI:
         """
         logger.debug("Listing available skills")
 
-        modules = self.plugin_manager.list_modules()
+        # 获取已发现插件的元数据
+        discovered_plugins = self.plugin_manager.plugins
 
         skills = [
             SkillInfo(
-                name=module.name,
-                description=module.description,
-                version=module.version,
-                status="available" if module.enabled else "disabled",
+                name=plugin_metadata.name,
+                description=plugin_metadata.description,
+                version=plugin_metadata.version,
+                status="available" if plugin_metadata.enabled else "disabled",
             )
-            for module in modules
+            for plugin_metadata in discovered_plugins.values()
         ]
 
         logger.debug(f"Found {len(skills)} skills")
@@ -462,20 +514,44 @@ class AgentAPI:
         )
 
         try:
-            records = self.history_manager.get_records(
-                limit=limit,
-                search=search,
-                module=module,
-            )
+            # 获取所有记录
+            all_records: list[HistoryRecord] = []
 
-            history_records = [
-                HistoryRecord(
-                    id=record.id,
+            if module:
+                # 按模块筛选
+                if module in self.history_manager.records:
+                    all_records = self.history_manager.records[module]
+            else:
+                # 获取所有模块的记录
+                for module_records in self.history_manager.records.values():
+                    all_records.extend(module_records)
+
+            # 搜索筛选
+            if search:
+                search_results = self.history_manager.search(search)
+                # 如果同时指定了模块，需要交集
+                if module:
+                    all_records = [r for r in search_results if r.module == module]
+                else:
+                    all_records = search_results
+
+            # 按时间排序（最新的在前）- 使用不可变 sorted() 函数
+            all_records = sorted(all_records, key=lambda r: r.timestamp, reverse=True)
+
+            # 限制数量
+            records: list[HistoryRecord] = all_records[:limit]
+
+            # 转换为 HistoryRecord schema
+            from learning_assistant.api.schemas import HistoryRecord as APIHistoryRecord
+
+            history_records: list[APIHistoryRecord] = [
+                APIHistoryRecord(
+                    id=record.record_id,
                     module=record.module,
-                    title=record.title,
-                    url=record.url,
+                    title=record.metadata.get("title", record.input[:50]),
+                    url=record.input,
                     timestamp=record.timestamp.isoformat(),
-                    status=record.status,
+                    status=record.metadata.get("status", "success"),
                 )
                 for record in records
             ]

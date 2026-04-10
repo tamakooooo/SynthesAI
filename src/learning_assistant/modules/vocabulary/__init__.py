@@ -82,15 +82,39 @@ class VocabularyLearningModule(BaseModule):
 
     def _init_components(self) -> None:
         """Initialize all components."""
+        from learning_assistant.core.config_manager import ConfigManager
+
         # LLM service (must be initialized first)
         llm_config = self.config.get("llm", {})
         provider = llm_config.get("provider", "openai")
 
-        # Get API key from environment
+        # Get API key with priority: env var > config file > global settings
+        api_key = None
         api_key_env = f"{provider.upper()}_API_KEY"
+
+        # 1. Try environment variable first (highest priority)
         api_key = os.environ.get(api_key_env)
+
+        # 2. Try module config file
+        if not api_key and "api_key" in llm_config:
+            api_key = llm_config["api_key"]
+
+        # 3. Try global settings via ConfigManager
         if not api_key:
-            raise ValueError(f"API key not found: {api_key_env}")
+            try:
+                config_manager = ConfigManager()
+                config_manager.load_all()
+                global_llm_config = config_manager.get_llm_config(provider)
+                api_key = global_llm_config.get("api_key")
+            except Exception as e:
+                logger.debug(f"Failed to get API key from global config: {e}")
+
+        if not api_key:
+            raise ValueError(
+                f"API key not found. Set {api_key_env} environment variable, "
+                f"add 'api_key' to vocabulary.llm config, "
+                f"or configure it in settings.local.yaml"
+            )
 
         # Build LLM kwargs with base_url from config
         llm_kwargs = {}

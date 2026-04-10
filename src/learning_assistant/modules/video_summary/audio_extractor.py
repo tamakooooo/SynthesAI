@@ -430,42 +430,49 @@ class AudioExtractor:
             cmd: FFmpeg command
             total_duration: Total video duration in seconds
         """
-        # Add progress output
-        cmd_with_progress = cmd.copy()
-        cmd_with_progress.extend(
-            [
-                "-progress",
-                "pipe:1",
-            ]
-        )
+        # Decide whether to use progress monitoring
+        use_progress = self.progress_callback is not None and total_duration > 0
 
-        process = subprocess.Popen(
-            cmd_with_progress,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        if use_progress:
+            # Add progress output
+            cmd_with_progress = cmd.copy()
+            cmd_with_progress.extend(["-progress", "pipe:1"])
 
-        # Monitor progress
-        if self.progress_callback and total_duration > 0 and process.stdout:
-            for line in process.stdout:
-                if line.startswith("out_time_ms"):
-                    # Extract current time in microseconds
-                    time_us = int(line.split("=")[1].strip())
-                    current_time = time_us / 1_000_000  # Convert to seconds
+            process = subprocess.Popen(
+                cmd_with_progress,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
 
-                    # Calculate percentage
-                    percentage = min(100.0, (current_time / total_duration) * 100)
+            # Monitor progress
+            if process.stdout:
+                for line in process.stdout:
+                    if line.startswith("out_time_ms"):
+                        # Extract current time in microseconds
+                        time_us = int(line.split("=")[1].strip())
+                        current_time = time_us / 1_000_000  # Convert to seconds
 
-                    # Create progress
-                    progress = AudioExtractionProgress(
-                        status="extracting",
-                        percentage=percentage,
-                        current_time=current_time,
-                        total_duration=total_duration,
-                    )
+                        # Calculate percentage
+                        percentage = min(100.0, (current_time / total_duration) * 100)
 
-                    self.progress_callback(progress)
+                        # Create progress
+                        progress = AudioExtractionProgress(
+                            status="extracting",
+                            percentage=percentage,
+                            current_time=current_time,
+                            total_duration=total_duration,
+                        )
+
+                        self.progress_callback(progress)
+        else:
+            # No progress callback - run without progress monitoring
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
 
         # Wait for completion
         process.wait()

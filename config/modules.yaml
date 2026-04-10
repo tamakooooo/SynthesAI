@@ -16,7 +16,7 @@ modules:
         model: "kimi-k2.5"
         base_url: "https://api.tamako.online/v1"
         temperature: 0.3
-        max_tokens: 2000
+        max_tokens: 32768
 
       # Video download settings
       download:
@@ -188,8 +188,8 @@ modules:
 
       # LLM settings
       llm:
-        provider: "${LLM_PROVIDER:openai}"
-        model: "${LLM_MODEL:gpt-4}"
+        provider: "openai"
+        model: "kimi-k2.5"
         temperature: 0.3
         max_tokens: 4000
 

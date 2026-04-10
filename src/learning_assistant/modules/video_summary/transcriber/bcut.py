@@ -37,6 +37,13 @@ class BcutASR(BaseASR):
     Supports only Chinese and English languages.
     """
 
+    # Network request timeout (seconds)
+    REQUEST_TIMEOUT = 30
+    # Max polling attempts
+    MAX_POLL_RETRIES = 180  # 3 minutes max
+    # Poll interval (seconds)
+    POLL_INTERVAL = 1
+
     headers = {
         "User-Agent": "Bilibili/1.0.0 (https://www.bilibili.com)",
         "Content-Type": "application/json",
@@ -102,7 +109,7 @@ class BcutASR(BaseASR):
             }
         )
 
-        resp = requests.post(API_REQ_UPLOAD, data=payload, headers=self.headers)
+        resp = requests.post(API_REQ_UPLOAD, data=payload, headers=self.headers, timeout=self.REQUEST_TIMEOUT)
         resp.raise_for_status()
         resp_data = resp.json()["data"]
 
@@ -150,6 +157,7 @@ class BcutASR(BaseASR):
                 self.__upload_urls[clip_idx],
                 data=self.file_binary[start_range:end_range],
                 headers=self.headers,
+                timeout=self.REQUEST_TIMEOUT,
             )
             resp.raise_for_status()
 
@@ -173,7 +181,7 @@ class BcutASR(BaseASR):
             }
         )
 
-        resp = requests.post(API_COMMIT_UPLOAD, data=data, headers=self.headers)
+        resp = requests.post(API_COMMIT_UPLOAD, data=data, headers=self.headers, timeout=self.REQUEST_TIMEOUT)
         resp.raise_for_status()
         resp_data = resp.json()["data"]
 
@@ -192,6 +200,7 @@ class BcutASR(BaseASR):
             API_CREATE_TASK,
             json={"resource": self.__download_url, "model_id": "8"},
             headers=self.headers,
+            timeout=self.REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
         resp_data = resp.json()["data"]
@@ -216,6 +225,7 @@ class BcutASR(BaseASR):
             API_QUERY_RESULT,
             params={"model_id": 7, "task_id": task_id or self.task_id},
             headers=self.headers,
+            timeout=self.REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
         result_data: dict[str, Any] = resp.json()["data"]
@@ -261,8 +271,8 @@ class BcutASR(BaseASR):
 
         # Poll task status until complete
         task_resp = None
-        max_retries = 500  # Maximum polling attempts
-        poll_interval = 1  # Seconds between polls
+        max_retries = self.MAX_POLL_RETRIES
+        poll_interval = self.POLL_INTERVAL
 
         for retry_idx in range(max_retries):
             task_resp = self.result()
@@ -271,14 +281,22 @@ class BcutASR(BaseASR):
             logger.debug(f"Poll attempt {retry_idx + 1}/{max_retries}: state={state}")
 
             if state == 4:  # Task completed
+                logger.info(f"ASR task completed after {retry_idx + 1} polls")
                 break
+
+            # Log progress every 10 attempts
+            if (retry_idx + 1) % 10 == 0:
+                logger.info(f"Still processing... ({retry_idx + 1}/{max_retries})")
 
             time.sleep(poll_interval)
 
         # Check result
         if task_resp is None or task_resp.get("state") != 4:
             callback(*ASRStatus.FAILED.callback_tuple())
-            raise RuntimeError("ASR task failed or timeout")
+            raise RuntimeError(
+                f"ASR task failed or timeout after {max_retries} attempts "
+                f"({max_retries * poll_interval}s)"
+            )
 
         # Parse result
         callback(*ASRStatus.COMPLETED.callback_tuple())

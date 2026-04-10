@@ -1,38 +1,72 @@
 """
-Bilibili Downloader using yutto.
+Bilibili Downloader using httpx + ffmpeg.
 
-This module provides B站-specific download capabilities using yutto library
-to avoid SSL/CDN issues with yt-dlp.
+This module implements B站 video download based on bili-sync's approach:
+- WBI signature for API requests
+- Separate video/audio stream download
+- CDN preference sorting
+- FFmpeg merge for final output
 """
 
 import asyncio
+import hashlib
+import json
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
+import httpx
 from loguru import logger
-
-# Import yutto components
-try:
-    from biliass import BlockOptions
-    from yutto.extractor import UgcVideoExtractor
-    from yutto.types import EpisodeData, ExtractorOptions
-    from yutto.utils.danmaku import DanmakuOptions
-    from yutto.utils.fetcher import Fetcher, FetcherContext, create_client
-    from yutto.validator import validate_user_info
-
-    YUTTO_AVAILABLE = True
-except ImportError:
-    YUTTO_AVAILABLE = False
-    logger.warning("yutto is not installed. B站 downloads will use yt-dlp fallback.")
 
 
 class BilibiliDownloader:
     """
-    B站 Video Downloader using yutto library.
+    B站 Video Downloader using httpx + ffmpeg.
 
-    Uses yutto's download manager directly to avoid CLI encoding issues
-    and SSL problems encountered with yt-dlp.
+    Based on bili-sync implementation:
+    - WBI signature for API authentication
+    - Separate video/audio download with CDN preference
+    - FFmpeg merge for final MP4 output
     """
+
+    # API endpoints
+    API_PLAYURL = "https://api.bilibili.com/x/player/wbi/playurl"
+    API_VIDEO_INFO = "https://api.bilibili.com/x/web-interface/view"
+
+    # WBI mixin key encoding table (from bili-sync)
+    MIXIN_KEY_ENC_TAB = [
+        46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+        33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
+        61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
+        36, 20, 34, 44, 52,
+    ]
+
+    # Required headers (from bili-sync)
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.bilibili.com/",
+    }
+
+    # Quality mappings
+    VIDEO_QUALITY_MAP = {
+        16: "360P",
+        32: "480P",
+        64: "720P",
+        80: "1080P",
+        112: "1080P+",
+        116: "1080P60",
+        120: "4K",
+    }
+
+    AUDIO_QUALITY_MAP = {
+        30216: "64k",
+        30232: "132k",
+        30280: "192k",
+        30250: "Dolby",
+        30251: "Hi-RES",
+    }
 
     def __init__(
         self,
@@ -52,21 +86,34 @@ class BilibiliDownloader:
         self.sessdata = sessdata
         self.cookie_file = cookie_file
 
-        # Extract SESSDATA from cookie file if not provided
+        # Default cookie file path
+        if not self.cookie_file:
+            default_cookie_path = Path("config/cookies/bilibili_cookies.txt")
+            if default_cookie_path.exists():
+                self.cookie_file = default_cookie_path
+                logger.info(f"Using default cookie file: {self.cookie_file}")
+
+        # Extract SESSDATA from cookie file
         if not self.sessdata and self.cookie_file and self.cookie_file.exists():
             self.sessdata = self._extract_sessdata_from_cookie_file()
 
-        logger.info(
-            f"BilibiliDownloader initialized with output_dir: {self.output_dir}"
+        # Initialize HTTP client
+        self.client = httpx.AsyncClient(
+            headers=self.HEADERS,
+            cookies={"SESSDATA": self.sessdata} if self.sessdata else None,
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            follow_redirects=True,
         )
 
-    def _extract_sessdata_from_cookie_file(self) -> str | None:
-        """
-        Extract SESSDATA from Netscape format cookie file.
+        # WBI keys (will be fetched on first request)
+        self.wbi_img_url: str | None = None
+        self.wbi_sub_url: str | None = None
+        self.mixin_key: str | None = None
 
-        Returns:
-            SESSDATA value or None if not found
-        """
+        logger.info(f"BilibiliDownloader initialized with output_dir: {self.output_dir}")
+
+    def _extract_sessdata_from_cookie_file(self) -> str | None:
+        """Extract SESSDATA from Netscape format cookie file."""
         if not self.cookie_file or not self.cookie_file.exists():
             return None
 
@@ -77,228 +124,342 @@ class BilibiliDownloader:
                         continue
 
                     parts = line.strip().split("\t")
-                    if len(parts) >= 7:
-                        domain, path, secure, expiry, name, value = (
-                            parts[0],
-                            parts[2],
-                            parts[3],
-                            parts[4],
-                            parts[5],
-                            parts[6],
-                        )
-
-                        if name == "SESSDATA":
-                            logger.info(
-                                f"Extracted SESSDATA from cookie file: {self.cookie_file}"
-                            )
-                            return value
-
+                    if len(parts) >= 7 and parts[5] == "SESSDATA":
+                        logger.info(f"Extracted SESSDATA from cookie file")
+                        return parts[6]
         except Exception as e:
-            logger.error(f"Failed to extract SESSDATA from cookie file: {e}")
+            logger.error(f"Failed to extract SESSDATA: {e}")
 
         return None
+
+    async def _get_wbi_keys(self) -> None:
+        """Fetch WBI keys for signature."""
+        if self.mixin_key:
+            return
+
+        try:
+            # Get WBI img keys from navigation API
+            resp = await self.client.get(
+                "https://api.bilibili.com/x/web-interface/nav"
+            )
+            data = resp.json()
+
+            if data["code"] != 0:
+                logger.warning(f"Failed to get WBI keys: {data.get('message')}")
+                return
+
+            wbi_img = data["data"]["wbi_img"]
+            self.wbi_img_url = wbi_img["img_url"].split("/")[-1].split(".")[0]
+            self.wbi_sub_url = wbi_img["sub_url"].split("/")[-1].split(".")[0]
+
+            # Generate mixin key using encoding table
+            combined = self.wbi_img_url + self.wbi_sub_url
+            self.mixin_key = "".join(
+                combined[i] for i in self.MIXIN_KEY_ENC_TAB[:32]
+            )
+
+            logger.debug(f"WBI mixin key generated: {len(self.mixin_key)} chars")
+
+        except Exception as e:
+            logger.error(f"Failed to fetch WBI keys: {e}")
+
+    def _sign_wbi(self, params: dict[str, Any]) -> str:
+        """Sign parameters with WBI signature."""
+        if not self.mixin_key:
+            logger.warning("WBI mixin key not available, skipping signature")
+            return urlencode(params)
+
+        # Add wts (timestamp)
+        import time
+        params["wts"] = int(time.time())
+
+        # Sort and encode parameters
+        sorted_params = sorted(params.items())
+        encoded = "&".join(f"{k}={v}" for k, v in sorted_params)
+
+        # Calculate signature
+        signature = hashlib.md5((encoded + self.mixin_key).encode()).hexdigest()
+        params["w_rid"] = signature
+
+        return urlencode(params)
+
+    async def _get_video_info(self, bvid: str) -> dict[str, Any]:
+        """Get video metadata."""
+        resp = await self.client.get(
+            self.API_VIDEO_INFO,
+            params={"bvid": bvid}
+        )
+        data = resp.json()
+
+        if data["code"] != 0:
+            raise RuntimeError(f"Failed to get video info: {data.get('message')}")
+
+        return data["data"]
+
+    async def _get_playurl(self, bvid: str, cid: int) -> dict[str, Any]:
+        """Get playback URL with video/audio streams."""
+        await self._get_wbi_keys()
+
+        # Request parameters (from bili-sync)
+        params = {
+            "bvid": bvid,
+            "cid": cid,
+            "qn": 127,  # Request highest quality
+            "fnval": 4048,  # Support DASH format
+            "fourk": 1,  # Enable 4K
+        }
+
+        # Sign with WBI
+        signed_url = f"{self.API_PLAYURL}?{self._sign_wbi(params)}"
+
+        resp = await self.client.get(signed_url)
+        data = resp.json()
+
+        if data["code"] != 0:
+            raise RuntimeError(f"Failed to get playurl: {data.get('message')}")
+
+        return data["data"]
+
+    def _select_best_streams(
+        self,
+        dash_data: dict[str, Any],
+        video_quality: int,
+        audio_quality: int,
+    ) -> tuple[dict, dict]:
+        """Select best video and audio streams with CDN preference."""
+        # Find matching video stream
+        video_streams = dash_data.get("video", [])
+        target_video = None
+
+        for stream in video_streams:
+            if stream["id"] == video_quality:
+                target_video = stream
+                break
+
+        # Fallback to highest available quality
+        if not target_video and video_streams:
+            target_video = max(video_streams, key=lambda s: s["id"])
+            logger.info(f"Video quality {video_quality} not available, using {target_video['id']}")
+
+        # Find matching audio stream
+        audio_streams = dash_data.get("audio", [])
+        target_audio = None
+
+        for stream in audio_streams:
+            if stream["id"] == audio_quality:
+                target_audio = stream
+                break
+
+        # Fallback to highest available quality
+        if not target_audio and audio_streams:
+            target_audio = max(audio_streams, key=lambda s: s["id"])
+            logger.info(f"Audio quality {audio_quality} not available, using {target_audio['id']}")
+
+        if not target_video:
+            raise RuntimeError("No video stream available")
+        if not target_audio:
+            raise RuntimeError("No audio stream available")
+
+        # Select best CDN URL (from bili-sync: upos > cn > mcdn > other)
+        def get_best_url(stream: dict) -> str:
+            base_url = stream["baseUrl"]
+            backup_urls = stream.get("backupUrl", [])
+
+            all_urls = [base_url] + backup_urls
+
+            # Sort by CDN preference
+            def cdn_priority(url: str) -> int:
+                if "upos-" in url:
+                    return 0  # Best: provider CDN
+                elif "cn-" in url:
+                    return 1  # Good: self-hosted CDN
+                elif "mcdn" in url:
+                    return 2  # OK: MCDN
+                else:
+                    return 3  # Last resort: PCDN/other
+
+            all_urls.sort(key=cdn_priority)
+            return all_urls[0]
+
+        best_video_url = get_best_url(target_video)
+        best_audio_url = get_best_url(target_audio)
+
+        logger.info(
+            f"Selected streams: Video {target_video['id']} ({target_video.get('codecid', 'unknown')}), "
+            f"Audio {target_audio['id']}"
+        )
+
+        return (
+            {"url": best_video_url, "size": target_video.get("size", 0)},
+            {"url": best_audio_url, "size": target_audio.get("size", 0)},
+        )
+
+    async def _download_file(
+        self,
+        url: str,
+        output_path: Path,
+        description: str = "file",
+    ) -> bool:
+        """Download file with progress tracking."""
+        try:
+            logger.info(f"Downloading {description}...")
+
+            async with self.client.stream("GET", url) as response:
+                response.raise_for_status()
+
+                total_size = int(response.headers.get("content-length", 0))
+                downloaded = 0
+
+                with open(output_path, "wb") as f:
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        if total_size > 0:
+                            progress = (downloaded / total_size) * 100
+                            if int(progress) % 10 == 0:  # Log every 10%
+                                logger.debug(
+                                    f"{description} download: {progress:.1f}% "
+                                    f"({downloaded}/{total_size} bytes)"
+                                )
+
+            logger.info(f"{description} downloaded: {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to download {description}: {e}")
+            return False
+
+    def _merge_video_audio(
+        self,
+        video_path: Path,
+        audio_path: Path,
+        output_path: Path,
+    ) -> bool:
+        """Merge video and audio using FFmpeg."""
+        try:
+            logger.info("Merging video and audio...")
+
+            cmd = [
+                "ffmpeg",
+                "-i", str(video_path),
+                "-i", str(audio_path),
+                "-c", "copy",  # Stream copy (fast)
+                "-strict", "unofficial",
+                "-f", "mp4",
+                "-y",  # Overwrite
+                str(output_path),
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=60,
+            )
+
+            if result.returncode != 0:
+                error = result.stderr.decode("utf-8", errors="ignore")
+                logger.error(f"FFmpeg merge failed: {error}")
+                return False
+
+            logger.info(f"Merged successfully: {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to merge: {e}")
+            return False
 
     async def download_async(
         self,
         url: str,
         video_quality: int = 80,  # 1080P
-        audio_quality: int = 30280,  # 320kbps
+        audio_quality: int = 30280,  # 192k
         **kwargs: Any,
     ) -> Path | None:
         """
-        Download video asynchronously using yutto.
+        Download video asynchronously.
 
         Args:
             url: B站 video URL
             video_quality: Video quality ID (default: 80 for 1080P)
-            audio_quality: Audio quality ID (default: 30280 for 320kbps)
-            **kwargs: Additional yutto options
+            audio_quality: Audio quality ID (default: 30280 for 192k)
+            **kwargs: Additional options
 
         Returns:
-            Downloaded video path or None if download failed
+            Downloaded video path or None if failed
         """
-        if not YUTTO_AVAILABLE:
-            logger.error("yutto is not installed. Cannot download B站 video.")
-            return None
-
-        logger.info(f"Downloading B站 video with yutto: {url}")
-
-        # Create FetcherContext
-        ctx = FetcherContext()
-        ctx.set_fetch_semaphore(fetch_workers=8)
-
-        # Set cookies if SESSDATA is available
-        if self.sessdata:
-            logger.info("Using authenticated session with SESSDATA")
-            # Note: yutto's FetcherContext handles cookies internally
-            # We'll pass sessdata via command-line args equivalent
-
-        # Create HTTP client
         try:
-            async with create_client(
-                cookies=ctx.cookies,
-                trust_env=ctx.trust_env,
-                proxy=ctx.proxy,
-            ) as client:
-                # Validate user info
-                if not await validate_user_info(
-                    ctx, {"is_login": bool(self.sessdata), "vip_status": False}
-                ):
-                    logger.warning("User validation failed. Download may be limited.")
+            # Extract BV ID from URL
+            match = re.search(r"BV[\w]+", url)
+            if not match:
+                logger.error(f"Invalid B站 URL: {url}")
+                return None
 
-                # Initialize extractor
-                extractor = UgcVideoExtractor()
+            bvid = match.group(0)
+            logger.info(f"Downloading B站 video: {bvid}")
 
-                # Match URL
-                if not extractor.match(url):
-                    logger.error(f"URL does not match B站 format: {url}")
-                    return None
+            # Get video info
+            video_info = await self._get_video_info(bvid)
+            title = video_info["title"]
+            cid = video_info["cid"]
 
-                # Extract episode data
-                logger.info("Extracting video information...")
-                download_list = await extractor(
-                    ctx,
-                    client,
-                    ExtractorOptions(
-                        episodes=None,
-                        with_section=False,
-                        require_video=True,
-                        require_audio=True,
-                        require_danmaku=True,
-                        require_subtitle=True,
-                        require_metadata=True,
-                        require_cover=True,
-                        require_chapter_info=False,
-                        danmaku_format="ass",
-                        subpath_template="{name}",
-                        ai_translation_language=None,
-                    ),
-                )
+            logger.info(f"Video title: {title}")
 
-                if not download_list:
-                    logger.error("Failed to extract video data")
-                    return None
+            # Get playback URLs
+            playurl_data = await self._get_playurl(bvid, cid)
 
-                # Process first episode
-                episode_data_coro = download_list[0]
-                if episode_data_coro is None:
-                    logger.error("No episode data available")
-                    return None
+            # Check if DASH format available
+            if "dash" not in playurl_data:
+                logger.error("DASH format not available, video may require premium")
+                return None
 
-                episode_data = await episode_data_coro
-                if episode_data is None:
-                    logger.error("Failed to resolve episode data")
-                    return None
+            dash_data = playurl_data["dash"]
 
-                # Log download info
-                display_name = (
-                    episode_data.get("title")
-                    or episode_data.get("name")
-                    or "bilibili_video"
-                )
-                logger.info(f"Downloading: {display_name}")
+            # Select best streams with CDN preference
+            video_stream, audio_stream = self._select_best_streams(
+                dash_data, video_quality, audio_quality
+            )
 
-                # The path is already set by yutto's extractor
-                # We just need to make sure the parent directory exists
-                output_path = episode_data["path"]
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                logger.info(f"Output path: {output_path}")
+            # Prepare output paths
+            safe_title = re.sub(r'[<>:"/\\|?*]', "_", title)[:100]
+            temp_video = self.output_dir / f"{safe_title}_video.m4s"
+            temp_audio = self.output_dir / f"{safe_title}_audio.m4s"
+            final_output = self.output_dir / f"{safe_title}.mp4"
 
-                # Import download processor
-                from yutto.downloader.downloader import process_download
+            # Download video stream
+            if not await self._download_file(
+                video_stream["url"], temp_video, "video stream"
+            ):
+                return None
 
-                # Download
-                download_state = await process_download(
-                    ctx,
-                    client,
-                    episode_data,
-                    {
-                        "output_dir": str(
-                            self.output_dir.parent
-                            if self.output_dir.name == "data"
-                            else self.output_dir
-                        ),
-                        "tmp_dir": str(
-                            self.output_dir.parent
-                            if self.output_dir.name == "data"
-                            else self.output_dir
-                        ),
-                        "require_video": True,
-                        "require_chapter_info": False,
-                        "video_quality": video_quality,
-                        "video_download_codec": "avc",
-                        "video_save_codec": "avc",
-                        "video_download_codec_priority": "auto",
-                        "require_audio": True,
-                        "audio_quality": audio_quality,
-                        "audio_download_codec": "mp4a",
-                        "audio_save_codec": "mp4a",
-                        "output_format": "infer",
-                        "output_format_audio_only": "infer",
-                        "overwrite": False,
-                        "block_size": int(0.5 * 1024 * 1024),  # 0.5 MiB
-                        "num_workers": 8,
-                        "save_cover": False,
-                        "metadata_format": {
-                            "premiered": "%Y-%m-%d",
-                            "dateadded": "%Y-%m-%d %H:%M:%S",
-                        },
-                        "banned_mirrors_pattern": None,
-                        "danmaku_options": DanmakuOptions(
-                            font_size=25,
-                            font="Microsoft YaHei",
-                            opacity=0.9,
-                            display_region_ratio=1.0,
-                            speed=10.0,
-                            block_options=BlockOptions(
-                                block_top=False,
-                                block_bottom=False,
-                                block_scroll=False,
-                                block_reverse=False,
-                                block_special=False,
-                                block_colorful=False,
-                                block_keyword_patterns=[],
-                            ),
-                        ),
-                    },
-                )
+            # Download audio stream
+            if not await self._download_file(
+                audio_stream["url"], temp_audio, "audio stream"
+            ):
+                temp_video.unlink(missing_ok=True)
+                return None
 
-                if download_state:
-                    # Check for downloaded file (could be .mp4, .m4a, .mkv, etc.)
-                    downloaded_path = episode_data["path"]
+            # Merge with FFmpeg
+            if not self._merge_video_audio(temp_video, temp_audio, final_output):
+                temp_video.unlink(missing_ok=True)
+                temp_audio.unlink(missing_ok=True)
+                return None
 
-                    # If the path is relative, prepend output_dir
-                    if not downloaded_path.is_absolute():
-                        downloaded_path = self.output_dir / downloaded_path.name
+            # Cleanup temp files
+            temp_video.unlink(missing_ok=True)
+            temp_audio.unlink(missing_ok=True)
 
-                    if not downloaded_path.exists():
-                        # Try common video/audio extensions
-                        for ext in [".mp4", ".m4a", ".mkv", ".webm"]:
-                            test_path = downloaded_path.with_suffix(ext)
-                            if test_path.exists():
-                                downloaded_path = test_path
-                                break
-
-                    if downloaded_path.exists():
-                        logger.info(f"Download successful: {downloaded_path}")
-                        return downloaded_path
-                    else:
-                        logger.error(
-                            f"Download state shows success but file not found: {downloaded_path}"
-                        )
-                        logger.error(f"Searched in: {downloaded_path.parent}")
-                        logger.error(
-                            f"Files in directory: {list(downloaded_path.parent.glob('*')) if downloaded_path.parent.exists() else 'directory not found'}"
-                        )
-                        return None
-                else:
-                    logger.error("Download failed")
-                    return None
+            # Verify final output
+            if final_output.exists() and final_output.stat().st_size > 0:
+                logger.info(f"Download successful: {final_output}")
+                return final_output
+            else:
+                logger.error("Final output file missing or empty")
+                return None
 
         except Exception as e:
-            logger.error(f"Download error: {e}")
+            logger.error(f"Download failed: {e}")
             import traceback
-
             traceback.print_exc()
             return None
 
@@ -310,22 +471,19 @@ class BilibiliDownloader:
         **kwargs: Any,
     ) -> Path | None:
         """
-        Download video synchronously (wrapper for async method).
+        Download video synchronously.
 
         Args:
             url: B站 video URL
             video_quality: Video quality ID (default: 80 for 1080P)
-            audio_quality: Audio quality ID (default: 30280 for 320kbps)
-            **kwargs: Additional yutto options
+            audio_quality: Audio quality ID (default: 30280 for 192k)
+            **kwargs: Additional options
 
         Returns:
-            Downloaded video path or None if download failed
+            Downloaded video path or None if failed
         """
         try:
-            # Run async download
-            return asyncio.run(
-                self.download_async(url, video_quality, audio_quality, **kwargs)
-            )
+            return asyncio.run(self.download_async(url, video_quality, audio_quality, **kwargs))
         except KeyboardInterrupt:
             logger.info("Download interrupted by user")
             return None

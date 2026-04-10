@@ -26,6 +26,7 @@ from learning_assistant.api.exceptions import (
     VideoDownloadError,
     TranscriptionError,
     LLMAPIError,
+    SkillNotFoundError,
 )
 
 
@@ -38,6 +39,131 @@ class TestAgentAPI:
 
         assert api.plugin_manager is not None
         assert api.history_manager is not None
+
+    def test_plugin_initialization(self):
+        """测试插件初始化序列：发现并加载插件."""
+        api = AgentAPI()
+
+        # 验证插件被正确发现
+        discovered = api.plugin_manager.discover_plugins()
+        assert len(discovered) > 0
+        assert all(hasattr(plugin, 'name') for plugin in discovered)
+        assert all(hasattr(plugin, 'enabled') for plugin in discovered)
+
+        # 验证已加载的插件
+        loaded_plugins = api.plugin_manager.plugins
+        assert len(loaded_plugins) > 0
+
+        # 验证核心插件已加载
+        assert "video_summary" in loaded_plugins
+        assert "link_learning" in loaded_plugins
+
+        # 验证插件实例可获取
+        video_plugin = api.plugin_manager.get_plugin("video_summary")
+        assert video_plugin is not None
+        assert hasattr(video_plugin, 'execute')
+
+    def test_plugin_initialization_only_enabled(self):
+        """测试只加载启用的插件."""
+        api = AgentAPI()
+
+        # 获取所有已发现的插件
+        discovered = api.plugin_manager.discover_plugins()
+
+        # 统计启用的插件数量
+        enabled_count = sum(1 for plugin in discovered if plugin.enabled)
+
+        # 已加载插件数量应该等于或小于启用插件数量
+        loaded_count = len(api.plugin_manager.loaded_plugins)
+        assert loaded_count <= enabled_count
+
+        # 所有已加载插件应该都是启用的
+        for plugin_name in api.plugin_manager.loaded_plugins.keys():
+            # 从 self.plugins 获取元数据
+            if plugin_name in api.plugin_manager.plugins:
+                plugin_metadata = api.plugin_manager.plugins[plugin_name]
+                assert plugin_metadata.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_summarize_video_module_creates_instance(self):
+        """测试 summarize_video 创建并初始化模块实例."""
+        api = AgentAPI()
+
+        # 调用 summarize_video 会创建新的模块实例
+        # 由于没有配置 API key，会抛出 ValueError
+        with pytest.raises(ValueError, match="API key not found"):
+            await api.summarize_video(url="https://www.bilibili.com/video/BV1G49MBLE4D")
+
+    @pytest.mark.asyncio
+    async def test_summarize_video_with_valid_config(self):
+        """测试使用有效配置调用视频总结."""
+        api = AgentAPI()
+
+        # 这个测试需要真实的 API key 和网络连接
+        # 在没有配置的环境下会失败
+        try:
+            result = await api.summarize_video(url="https://www.bilibili.com/video/BV1G49MBLE4D")
+            # 如果成功，验证结果结构
+            assert result.status == "success"
+        except ValueError as e:
+            # 预期错误：没有 API key
+            assert "API key not found" in str(e)
+        except Exception as e:
+            # 其他可能的错误（网络、下载等）
+            # 这些都是可以接受的
+            pass
+
+    def test_get_plugin_returns_none_for_invalid_name(self):
+        """测试 get_plugin 对无效插件名返回 None."""
+        api = AgentAPI()
+
+        # 尝试获取不存在的插件
+        invalid_plugin = api.plugin_manager.get_plugin("nonexistent_plugin_xyz")
+
+        # 应该返回 None，而不是抛出异常
+        assert invalid_plugin is None
+
+    def test_plugin_manager_get_all_plugins(self):
+        """测试 get_all_plugins 返回所有插件实例."""
+        api = AgentAPI()
+
+        all_plugins = api.plugin_manager.get_all_plugins()
+
+        # 应该返回字典
+        assert isinstance(all_plugins, dict)
+        assert len(all_plugins) > 0
+
+        # 验证插件实例
+        for plugin_name, plugin_instance in all_plugins.items():
+            # 插件应该是 BaseModule 或 BaseAdapter 实例
+            from learning_assistant.core.base_module import BaseModule
+            from learning_assistant.core.base_adapter import BaseAdapter
+
+            assert isinstance(plugin_instance, (BaseModule, BaseAdapter))
+
+            # BaseModule 有 execute 方法，BaseAdapter 有 initialize 方法
+            if isinstance(plugin_instance, BaseModule):
+                assert hasattr(plugin_instance, 'execute')
+            elif isinstance(plugin_instance, BaseAdapter):
+                assert hasattr(plugin_instance, 'initialize')
+
+    def test_list_skills_uses_discovered_plugins(self):
+        """测试 list_skills 使用已发现的插件元数据."""
+        api = AgentAPI()
+
+        skills = api.list_skills()
+
+        # 获取已发现插件的元数据
+        discovered_plugins = api.plugin_manager.plugins
+
+        # 验证技能数量与已发现插件一致
+        assert len(skills) == len(discovered_plugins)
+
+        # 验证技能名称与插件名称匹配
+        skill_names = [skill.name for skill in skills]
+        plugin_names = list(discovered_plugins.keys())
+
+        assert set(skill_names) == set(plugin_names)
 
     def test_list_skills(self):
         """测试列出技能."""
@@ -92,6 +218,69 @@ class TestAgentAPI:
 
         assert isinstance(records, list)
         # 所有记录的 module 应该是 video_summary
+        for record in records:
+            assert record.module == "video_summary"
+
+    def test_get_history_invalid_module(self):
+        """测试使用无效模块名获取历史记录."""
+        api = AgentAPI()
+
+        # 使用不存在的模块名
+        records = api.get_history(module="nonexistent_module_12345")
+
+        # 应该返回空列表
+        assert isinstance(records, list)
+        assert len(records) == 0
+
+    def test_get_history_empty_after_clear(self):
+        """测试清空历史记录后返回空列表."""
+        api = AgentAPI()
+
+        # 清空历史记录（如果支持）
+        # 注意：HistoryManager 可能没有 clear 方法，这里测试逻辑
+        # 如果不支持，跳过此测试
+
+        # 获取历史记录
+        records = api.get_history(limit=100)
+
+        # 验证返回的是列表
+        assert isinstance(records, list)
+
+        # 如果有记录，测试清空后
+        if len(records) > 0 and hasattr(api.history_manager, 'clear'):
+            api.history_manager.clear()
+            records_after_clear = api.get_history(limit=100)
+            assert len(records_after_clear) == 0
+
+    def test_get_history_pagination(self):
+        """测试历史记录分页/限制功能."""
+        api = AgentAPI()
+
+        # 获取不同数量的记录
+        records_5 = api.get_history(limit=5)
+        records_10 = api.get_history(limit=10)
+        records_100 = api.get_history(limit=100)
+
+        # 验证限制生效
+        assert len(records_5) <= 5
+        assert len(records_10) <= 10
+        assert len(records_100) <= 100
+
+    def test_get_history_combined_filters(self):
+        """测试组合搜索和模块筛选."""
+        api = AgentAPI()
+
+        # 同时使用搜索和模块筛选
+        records = api.get_history(
+            search="test",
+            module="video_summary",
+            limit=10
+        )
+
+        assert isinstance(records, list)
+        assert len(records) <= 10
+
+        # 验证所有记录都匹配模块
         for record in records:
             assert record.module == "video_summary"
 

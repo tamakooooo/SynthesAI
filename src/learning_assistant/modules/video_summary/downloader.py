@@ -15,12 +15,12 @@ from loguru import logger
 
 # Import B站-specific downloader
 try:
-    from .bilibili_downloader import BilibiliDownloader, YUTTO_AVAILABLE
+    from .bilibili_downloader import BilibiliDownloader
 
-    YUTTO_AVAILABLE = True
+    BILIBILI_DOWNLOADER_AVAILABLE = True
 except ImportError:
-    YUTTO_AVAILABLE = False
-    logger.warning("yutto not available, B站 downloads will use yt-dlp fallback")
+    BILIBILI_DOWNLOADER_AVAILABLE = False
+    logger.warning("BilibiliDownloader not available, B站 downloads will use yt-dlp fallback")
 
 
 @dataclass
@@ -103,8 +103,8 @@ class VideoDownloader:
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initialize B站-specific downloader if yutto is available
-        if YUTTO_AVAILABLE:
+        # Initialize B站-specific downloader if available
+        if BILIBILI_DOWNLOADER_AVAILABLE:
             self.bilibili_downloader = BilibiliDownloader(
                 output_dir=self.output_dir,
                 sessdata=sessdata,
@@ -213,9 +213,9 @@ class VideoDownloader:
         platform = self.detect_platform(url)
         logger.info(f"Platform: {platform}")
 
-        # Use yutto for B站 downloads if available
+        # Use BilibiliDownloader for B站 downloads if available
         if platform == "bilibili" and self.bilibili_downloader:
-            logger.info("Using yutto for B站 download (avoids SSL issues)")
+            logger.info("Using BilibiliDownloader for B站 video (WBI signature + CDN preference)")
             return self.bilibili_downloader.download(url, **kwargs)
 
         # Fallback to yt-dlp for other platforms or if yutto is not available

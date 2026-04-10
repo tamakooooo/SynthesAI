@@ -4,6 +4,7 @@ Video Summary Module for Learning Assistant.
 This module provides complete video content summarization workflow.
 """
 
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -107,6 +108,7 @@ class VideoSummaryModule(BaseModule):
             api_key=api_key,
             model=llm_config.get("model", "kimi-k2.5"),
             max_retries=llm_config.get("max_retries", 3),
+            max_tokens=llm_config.get("max_tokens", 4000),
             **llm_kwargs,
         )
 
@@ -221,26 +223,53 @@ class VideoSummaryModule(BaseModule):
                 # Step 3: Transcribe audio
                 logger.info("Step 3/5: Transcribing audio...")
                 transcript_data = self._transcribe_audio(audio_info["audio_path"])
+                logger.info(f"Transcription completed: {len(transcript_data)} characters")
 
                 # Step 4: Generate summary
                 logger.info("Step 4/5: Generating summary...")
+                logger.info("Calling LLM API (this may take 30-60 seconds)...")
                 summary_data = self._generate_summary(
                     video_info=video_info,
                     transcript=transcript_data,
                     language=language,
                     focus_areas=focus_areas,
                 )
+                logger.info("Summary generated successfully")
 
                 # Step 4.5: Extract frames for chapters (if enabled)
                 if self.frame_extractor and "chapters" in summary_data:
                     logger.info("Step 4.5/5: Extracting frames for chapters...")
-                    summary_data["chapters"] = (
-                        self.frame_extractor.extract_frames_for_chapters(
-                            video_path=video_info["video_path"],
-                            chapters=summary_data["chapters"],
+
+                    # Check if video file has video stream
+                    video_path = video_info["video_path"]
+                    has_video_stream = self._check_video_stream(video_path)
+
+                    if has_video_stream:
+                        # Extract frames from video
+                        summary_data["chapters"] = (
+                            self.frame_extractor.extract_frames_for_chapters(
+                                video_path=video_path,
+                                chapters=summary_data["chapters"],
+                                video_title=video_info["title"],
+                            )
+                        )
+                    else:
+                        # Use cover image for all chapters
+                        logger.info("Video file has no video stream, using cover image")
+                        # Pass both temp directory and original download directory
+                        cover_path = self._find_cover_image(
+                            video_path=video_path,
+                            download_dir=self.downloader.output_dir if self.downloader else None,
                             video_title=video_info["title"],
                         )
-                    )
+                        if cover_path:
+                            summary_data["chapters"] = self._use_cover_for_chapters(
+                                chapters=summary_data["chapters"],
+                                cover_path=cover_path,
+                                video_title=video_info["title"],
+                            )
+                        else:
+                            logger.warning("No cover image found, skipping screenshots")
 
                 # Step 5: Export output
                 logger.info("Step 5/5: Exporting output...")
@@ -346,10 +375,16 @@ class VideoSummaryModule(BaseModule):
         if not self.transcriber:
             raise RuntimeError("Transcriber not initialized")
 
+        logger.info(f"Starting audio transcription: {audio_path}")
+        logger.info("Uploading audio to ASR service (this may take 1-3 minutes)...")
+
         asr_data = self.transcriber.transcribe(audio_path)
 
         # Return full transcript as text
-        return asr_data.to_txt()
+        transcript = asr_data.to_txt()
+        logger.info(f"Transcription complete: {len(transcript)} characters, {len(asr_data.segments)} segments")
+
+        return transcript
 
     def _generate_summary(
         self,
@@ -390,7 +425,7 @@ class VideoSummaryModule(BaseModule):
         if not self.exporter:
             raise RuntimeError("Exporter not initialized")
 
-        output_dir = Path("data/outputs")
+        output_dir = Path("data/outputs/video")
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate output filename from video title
@@ -421,6 +456,124 @@ class VideoSummaryModule(BaseModule):
                 logger.warning(f"PDF export failed: {e}")
 
         return output_paths
+
+    def _check_video_stream(self, video_path: Path) -> bool:
+        """Check if video file has a video stream."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-select_streams", "v:0",
+                    "-show_entries", "stream=codec_type",
+                    "-of", "csv=p=0",
+                    str(video_path)
+                ],
+                capture_output=True,
+                timeout=10,
+            )
+            # If there's a video stream, output will contain "video"
+            return bool(result.stdout.strip())
+        except Exception as e:
+            logger.warning(f"Failed to check video stream: {e}")
+            return False
+
+    def _find_cover_image(
+        self, video_path: Path, download_dir: Path | None = None, video_title: str | None = None
+    ) -> Path | None:
+        """Find cover image for audio file.
+
+        Searches in:
+        1. Same directory as video_path (temp directory)
+        2. Download directory (using video_title for matching)
+        """
+        logger.debug(f"Searching for cover image: video_title={video_title}")
+        logger.debug(f"Video path: {video_path}")
+        logger.debug(f"Download dir: {download_dir}")
+
+        # First check in video directory (temp)
+        video_dir = video_path.parent
+        video_stem = video_path.stem
+
+        for ext in [".jpg", ".png", ".jpeg"]:
+            cover_path = video_dir / f"{video_stem}_cover{ext}"
+            logger.debug(f"Checking temp dir: {cover_path}")
+            if cover_path.exists():
+                logger.info(f"Found cover image in temp dir: {cover_path}")
+                return cover_path
+
+        # Check in download directory using video_title
+        if download_dir and download_dir.exists() and video_title:
+            logger.debug(f"Searching in download dir: {download_dir}")
+
+            # List all cover files for debugging
+            jpg_files = list(download_dir.glob("*_cover.jpg"))
+            logger.debug(f"Found {len(jpg_files)} cover files in download dir")
+
+            # Try exact title match
+            for ext in [".jpg", ".png", ".jpeg"]:
+                cover_path = download_dir / f"{video_title}_cover{ext}"
+                logger.debug(f"Checking download dir with title: {cover_path}")
+                if cover_path.exists():
+                    logger.info(f"Found cover image in download dir: {cover_path}")
+                    return cover_path
+
+            # Try matching by partial title (in case of special chars)
+            for cover_file in download_dir.glob("*_cover.jpg"):
+                # Check if video title is contained in the cover filename
+                if video_title and video_title in str(cover_file):
+                    logger.info(f"Found cover image by partial match: {cover_file}")
+                    return cover_file
+
+            # Check for generic cover files in download directory
+            for cover_name in ["cover.jpg", "cover.png", "folder.jpg", "poster.jpg"]:
+                cover_path = download_dir / cover_name
+                if cover_path.exists():
+                    logger.info(f"Found generic cover image: {cover_path}")
+                    return cover_path
+        else:
+            if not download_dir:
+                logger.warning("Download directory not available")
+            elif not video_title:
+                logger.warning("Video title not available for cover search")
+
+        return None
+
+    def _use_cover_for_chapters(
+        self,
+        chapters: list[dict[str, Any]],
+        cover_path: Path,
+        video_title: str,
+    ) -> list[dict[str, Any]]:
+        """Use cover image for all chapters."""
+        import shutil
+
+        # Create video-specific directory
+        safe_title = self.frame_extractor._sanitize_title(video_title)
+        video_frame_dir = self.frame_extractor.output_dir / safe_title
+        video_frame_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy cover image to frame directory
+        cover_dest = video_frame_dir / "cover.jpg"
+        shutil.copy(cover_path, cover_dest)
+
+        logger.info(f"Copied cover image to {cover_dest}")
+
+        # Calculate relative path
+        relative_path = self.frame_extractor._calculate_relative_path(
+            frame_path=cover_dest,
+            output_dir=Path("data/outputs"),
+        )
+
+        # Add same cover path to all chapters
+        updated_chapters = []
+        for chapter in chapters:
+            updated_chapter = chapter.copy()
+            updated_chapter["screenshot_path"] = relative_path
+            updated_chapters.append(updated_chapter)
+
+        logger.info(f"Applied cover image to {len(chapters)} chapters")
+        return updated_chapters
 
     def cleanup(self) -> None:
         """Cleanup module resources."""

@@ -293,6 +293,11 @@ class FrameExtractor:
             # Generate frame filename
             frame_filename = f"chapter_{i + 1:02d}"
 
+            # Special handling for first chapter: use timestamp 0 (cover-like frame)
+            if i == 0:
+                logger.info("First chapter: using frame at 00:00 as cover image")
+                timestamp_sec = 0.0
+
             # Temporarily set output_dir to video-specific directory
             original_output_dir = self.output_dir
             self.output_dir = video_frame_dir
@@ -384,12 +389,16 @@ class FrameExtractor:
         # frame: data/frames/{title}/chapter_01.jpg
         # output: data/outputs/{title}_summary.md
 
+        logger.debug(f"Calculating relative path: frame_path={frame_path}, output_dir={output_dir}")
+
         # Calculate relative path: ../frames/{title}/chapter_01.jpg
         try:
             # Get relative path from output_dir's parent (data/)
             relative = frame_path.relative_to(output_dir.parent)
-            # Force forward slashes for cross-platform compatibility
-            return str(relative).replace("\\", "/")
+            # Prepend ../ to go from data/outputs/ to data/frames/
+            relative_path = "../" + str(relative).replace("\\", "/")
+            logger.debug(f"Calculated relative path: {relative_path}")
+            return relative_path
         except ValueError:
             # Fallback: use absolute path if relative calculation fails
             logger.warning(
