@@ -207,6 +207,16 @@ modules:
         directory: "data/outputs/vocabulary"
         save_history: true
 
+        # Visual card generation (NEW)
+        visual_card:
+          enabled: true           # Enable visual knowledge card generation
+          width: 1200             # Card width (editorial standard, 1200px)
+          format: png             # Output format: png, jpeg, html_only
+          scale: 2.0              # High resolution scaling (2x for retina displays)
+          max_words_display: 10   # Maximum words shown in grid cards
+          story_max_length: 150   # Truncate story text in panel (chars)
+          jpeg_quality: 95        # JPEG quality (1-100, for jpeg format)
+
     cli:
       command_name: "vocabulary"
       description: "Extract vocabulary and generate word cards"

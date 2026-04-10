@@ -17,6 +17,7 @@ from loguru import logger
 from learning_assistant.core.base_module import BaseModule
 from learning_assistant.core.event_bus import EventBus
 from learning_assistant.core.exporters import MarkdownExporter
+from learning_assistant.core.exporters.visual_card import VisualCardGenerator
 from learning_assistant.core.history_manager import HistoryManager
 from learning_assistant.core.llm.service import LLMService
 from learning_assistant.core.prompt_manager import PromptManager
@@ -52,6 +53,7 @@ class VocabularyLearningModule(BaseModule):
         self.word_extractor: WordExtractor | None = None
         self.phonetic_lookup: PhoneticLookup | None = None
         self.story_generator: StoryGenerator | None = None
+        self.card_generator: VisualCardGenerator | None = None
         self.exporter: MarkdownExporter | None = None
         self.llm_service: LLMService | None = None
         self.prompt_manager: PromptManager | None = None
@@ -166,6 +168,19 @@ class VocabularyLearningModule(BaseModule):
                 llm_service=self.llm_service,
                 prompt_manager=self.prompt_manager,
             )
+
+        # Visual card generator (optional)
+        output_config = self.config.get("output", {})
+        card_config = output_config.get("visual_card", {})
+
+        if card_config.get("enabled", True):
+            self.card_generator = VisualCardGenerator(
+                width=card_config.get("width", 1200),
+                output_format=card_config.get("format", "png")
+            )
+            logger.debug("VisualCardGenerator initialized")
+        else:
+            logger.debug("Visual card generation disabled")
 
         # Exporter
         output_config = self.config.get("output", {})
@@ -321,6 +336,23 @@ class VocabularyLearningModule(BaseModule):
             "part_of_speech_distribution": pos_dist,
         }
 
+    def _adapt_to_visual_card(self, output: VocabularyOutput) -> dict[str, Any]:
+        """
+        Adapt VocabularyOutput to visual card data format.
+
+        Converts vocabulary output data to a format compatible with
+        VisualCardGenerator for generating editorial-style knowledge cards.
+
+        Args:
+            output: VocabularyOutput object
+
+        Returns:
+            dict compatible with VisualCardGenerator.generate_card_html()
+        """
+        from .visual_adapter import vocabulary_output_to_card_data
+
+        return vocabulary_output_to_card_data(output)
+
     async def _export_and_save(
         self, output: VocabularyOutput, source: str
     ) -> dict[str, str]:
@@ -351,6 +383,29 @@ class VocabularyLearningModule(BaseModule):
                 output_path=output_path,
             )
             logger.info(f"Exported to: {output_path}")
+
+        # Generate visual card (NEW)
+        if self.card_generator:
+            try:
+                # Adapt data for visual card
+                card_data = self._adapt_to_visual_card(output)
+
+                # Generate HTML template
+                html_content = self.card_generator.generate_card_html(**card_data)
+
+                # Render PNG image
+                png_path = output_path.with_suffix(".png")
+                await self.card_generator.render_html_to_image(
+                    html_content=html_content,
+                    output_path=png_path,
+                    width=1200,
+                    scale=2.0,
+                )
+                logger.info(f"Visual card PNG saved to {png_path}")
+            except ImportError:
+                logger.warning("Playwright not installed, visual card not rendered (PNG skipped)")
+            except Exception as e:
+                logger.error(f"Failed to generate visual card: {e}")
 
         # Save to history
         if self.history_manager:
