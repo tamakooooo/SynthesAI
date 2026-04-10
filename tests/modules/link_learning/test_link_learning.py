@@ -4,7 +4,7 @@ Tests for Link Learning Module.
 
 import pytest
 
-from learning_assistant.modules.link_learning.models import KnowledgeCard, LinkContent, QAPair, QuizQuestion
+from learning_assistant.modules.link_learning.models import KnowledgeCard, LinkContent, KeyConcept
 from learning_assistant.modules.link_learning.content_fetcher import ContentFetcher
 from learning_assistant.modules.link_learning.content_parser import ContentParser
 
@@ -31,34 +31,6 @@ class TestModels:
         assert content.word_count == 5
         assert content.language == "zh"  # default
 
-    def test_qa_pair_creation(self):
-        """Test QAPair creation."""
-        qa = QAPair(
-            question="What is this?",
-            answer="This is a test.",
-            difficulty="easy",
-        )
-
-        assert qa.question == "What is this?"
-        assert qa.answer == "This is a test."
-        assert qa.difficulty == "easy"
-
-    def test_quiz_question_creation(self):
-        """Test QuizQuestion creation."""
-        quiz = QuizQuestion(
-            type="multiple_choice",
-            question="Which is correct?",
-            options=["A", "B", "C", "D"],
-            correct="A",
-            explanation="A is correct because...",
-        )
-
-        assert quiz.type == "multiple_choice"
-        assert quiz.question == "Which is correct?"
-        assert quiz.options == ["A", "B", "C", "D"]
-        assert quiz.correct == "A"
-        assert quiz.explanation == "A is correct because..."
-
     def test_knowledge_card_to_dict(self):
         """Test KnowledgeCard.to_dict()."""
         from datetime import datetime
@@ -69,6 +41,7 @@ class TestModels:
             source="example.com",
             summary="Test summary",
             key_points=["Point 1", "Point 2"],
+            key_concepts=[KeyConcept(term="Term1", definition="Definition1")],
             tags=["test", "example"],
             word_count=100,
             reading_time="1分钟",
@@ -82,6 +55,7 @@ class TestModels:
         assert card_dict["url"] == "https://example.com"
         assert card_dict["summary"] == "Test summary"
         assert card_dict["key_points"] == ["Point 1", "Point 2"]
+        assert card_dict["key_concepts"] == [{"term": "Term1", "definition": "Definition1"}]
         assert card_dict["tags"] == ["test", "example"]
         assert card_dict["word_count"] == 100
         assert card_dict["reading_time"] == "1分钟"

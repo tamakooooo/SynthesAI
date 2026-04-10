@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "learning-assistant"
+name = "synthesai"
 version = "0.2.0"
-description = "A modular, plugin-based AI learning assistant CLI tool with Agent integration support"
+description = "SynthesAI - Synthesize Knowledge with AI Intelligence. AI-powered learning assistant for video summaries, knowledge cards, and vocabulary extraction"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "SynthesAI Team", email = "team@synthesai.io" }
 ]
-keywords = ["ai", "learning", "video", "summary", "cli"]
+keywords = ["synthesai", "ai", "synthesis", "learning", "video", "summary", "knowledge", "cli"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -78,13 +78,15 @@ link = [
 ]
 
 [project.scripts]
-la = "learning_assistant.cli:app"
+synthesai = "learning_assistant.cli:app"
+sai = "learning_assistant.cli:app"
+la = "learning_assistant.cli:app"  # Legacy alias
 
 [project.urls]
-Homepage = "https://github.com/yourname/learning-assistant"
-Documentation = "https://learning-assistant.readthedocs.io"
-Repository = "https://github.com/yourname/learning-assistant.git"
-Issues = "https://github.com/yourname/learning-assistant/issues"
+Homepage = "https://github.com/synthesai/synthesai"
+Documentation = "https://synthesai.readthedocs.io"
+Repository = "https://github.com/synthesai/synthesai.git"
+Issues = "https://github.com/synthesai/synthesai/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/learning_assistant"]

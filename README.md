@@ -1,11 +1,49 @@
-# Learning Assistant
+# SynthesAI
 
-> **模块化 AI 学习助手** - 通过 AI 加速知识获取和整理
+> **SynthesAI** - Synthesize Knowledge with AI Intelligence
+>
+> **智能整合，知识精炼** - AI驱动的模块化学习助手，通过智能技术加速知识获取和整理
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-432%20passed-brightgreen.svg)](https://github.com/yourname/learning-assistant)
-[![Coverage](https://img.shields.io/badge/coverage-%3E80%25-green.svg)](https://github.com/yourname/learning-assistant)
+[![Tests](https://img.shields.io/badge/tests-652%20passed-brightgreen.svg)](https://github.com/yourname/synthesai)
+[![Coverage](https://img.shields.io/badge/coverage-%3E80%25-green.svg)](https://github.com/yourname/synthesai)
+
+---
+
+## 🎯 What is SynthesAI?
+
+**SynthesAI** synthesizes knowledge from multiple sources into structured learning materials:
+
+- 📹 **Videos** → Structured summaries with key frames
+- 📝 **Articles** → Knowledge cards and key concepts  
+- 📚 **Vocabulary** → Learning materials with phonetics
+
+**From Complexity to Clarity** - SynthesAI transforms complex content into clear, actionable knowledge.
+
+---
+
+## 🤖 AI Agent 开发导航
+
+**本项目面向 AI Agent 开发，提供完整的 Agent 开发文档体系。**
+
+### Agent 快速开始
+
+**如果你是 AI Agent，请先阅读**：
+
+1. 📖 **[Agent 文档索引](docs/AGENT_DOCUMENTATION_INDEX.md)** - 快速导航所有文档
+2. 🏗️ **[架构总览](docs/ARCHITECTURE_OVERVIEW.md)** - 理解项目四层架构（必读）
+3. 🛠️ **[Agent 开发指南](docs/AGENT_DEVELOPMENT_GUIDE.md)** - 开发新模块标准流程
+4. 🎨 **[知识卡片系统](docs/knowledge_card_prompt_update.md)** - 编辑风格卡片生成（链接总结）
+
+**Agent 开发要点**：
+- ✅ 异步架构：所有异步函数使用 `async def` + `await`
+- ✅ 提示词格式：`关键词：详细描述`（3-8字关键词，15-30字描述）
+- ✅ 类型注解：使用 `dict[str, Any]`，不是 `Dict`
+- ✅ 配置管理：API Key 从配置读取，不硬编码
+- ✅ 组件复用：LLMService、PromptManager、VisualCardGenerator
+
+---
 
 ## 📋 项目简介
 
@@ -20,6 +58,8 @@
 - ✅ **多 LLM 支持** - OpenAI、Anthropic、DeepSeek
 - ✅ **免费转录** - 使用 BcutASR（B站必剪）免费云端服务
 - ✅ **三大核心模块** - 视频总结、链接学习、单词学习
+- ✅ **Agent Ready** - 支持自动化开发，详细 Agent 文档
+- ✅ **编辑风格卡片** - 专业的知识卡片生成系统（HTML + PNG）
 - ✅ **测试完善** - 546+个测试，覆盖率>80%
 
 ## 🎯 核心功能
@@ -414,6 +454,94 @@ ruff check src/learning_assistant
 
 MIT License - 详见 [LICENSE](LICENSE)
 
+## 🙏 致谢与参考项目
+
+本项目在开发过程中参考和借鉴了以下优秀的开源项目：
+
+### 🎨 visual-note-card-skills
+
+**项目地址**: https://github.com/beilunyang/visual-note-card-skills
+
+**参考内容**：
+- 编辑风格知识卡片的视觉设计理念
+- Claude 配色方案（橙紫渐变）
+- 固定宽度布局系统（1200px）
+- 深色/浅色双栏对比设计
+- 框架网格卡片布局（Framework Row）
+- 专业字体系统（Playfair Display + Noto Sans SC + JetBrains Mono）
+- 底部高亮条和页脚设计
+
+**应用于**：
+- Link Learning 模块的知识卡片生成系统
+- `VisualCardGenerator` 组件实现
+- 提示词模板 v2.0 格式设计
+
+**感谢**: @beilunyang 开创性的编辑风格卡片设计，让知识可视化更专业、更美观。
+
+---
+
+### 📺 bili-sync
+
+**项目地址**: https://github.com/amtoaer/bili-sync
+
+**参考内容**：
+- B站视频下载的核心实现方案
+- WBI签名算法（B站API认证）
+- 音视频流分离下载策略
+- CDN优先级排序逻辑
+- FFmpeg音视频合并方法
+- 分块并行下载优化
+
+**应用于**：
+- Video Summary 模块的 B站视频下载器
+- `BilibiliDownloader` 类实现
+- 视频流选择和合并逻辑
+
+**感谢**: @amtoaer 提供了稳定高效的 B站视频下载方案，解决了视频模块的核心技术难点。
+
+---
+
+### 🤖 Claude Code 社区
+
+**项目地址**: https://github.com/anthropics/claude-code
+
+**参考内容**：
+- Agent 开发最佳实践
+- 插件化架构设计思路
+- 文档编写规范
+- Agent 文档组织方式
+
+**应用于**：
+- 本项目的 Agent 文档体系
+- `AGENT_DEVELOPMENT_GUIDE.md` 设计
+- `ARCHITECTURE_OVERVIEW.md` 组织方式
+
+**感谢**: Anthropic 团队提供的 Agent 开发模式和文档示例，启发了本项目面向 Agent 的文档设计。
+
+---
+
+## 💡 设计启发
+
+本项目遵循以下设计理念：
+
+1. **复用优于重复** - 参考优秀项目，不重复造轮子
+2. **开源精神** - 致谢参考项目，鼓励开源协作
+3. **学习与创新** - 学习优秀设计，创造适合本项目的实现
+4. **尊重原作者** - 明确标注参考来源，感谢社区贡献
+
+**我们鼓励**：
+- ✅ 参考优秀开源项目
+- ✅ 学习最佳实践
+- ✅ 明确标注来源和感谢
+- ✅ 为社区贡献回馈
+
+**我们避免**：
+- ❌ 复制代码不标注来源
+- ❌ 不尊重原作者贡献
+- ❌ 重复造已有解决方案的轮子
+
+---
+
 ## 📞 联系方式
 
 - 项目地址: https://github.com/yourname/learning-assistant
@@ -422,6 +550,6 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ---
 
-**最后更新**: 2026-04-09
+**最后更新**: 2026-04-11
 **版本**: v0.2.0
-**状态**: ✅ 三大核心模块已完成，546+测试通过，可用于生产环境
+**状态**: ✅ 三大核心模块已完成，知识卡片系统已集成，Agent 文档体系完善，可用于生产环境

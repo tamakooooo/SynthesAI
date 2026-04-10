@@ -27,31 +27,15 @@ class LinkContent:
 
 
 @dataclass
-class QAPair:
+class KeyConcept:
     """
-    Question-Answer pair.
+    Key concept from the original content.
 
-    Represents a Q&A pair generated from the content.
-    """
-
-    question: str
-    answer: str
-    difficulty: str = "medium"  # easy/medium/hard
-
-
-@dataclass
-class QuizQuestion:
-    """
-    Quiz question.
-
-    Represents a quiz question for testing knowledge.
+    Represents an important term or concept mentioned in the source content.
     """
 
-    type: str  # multiple_choice/true_false/fill_blank
-    question: str
-    correct: str  # Correct answer
-    options: Optional[list[str]] = None
-    explanation: Optional[str] = None
+    term: str  # Concept/term name (from original content)
+    definition: str  # Brief definition or explanation
 
 
 @dataclass
@@ -65,15 +49,14 @@ class KnowledgeCard:
     title: str  # Article title
     url: str  # Original URL
     source: str  # Source website
-    summary: str  # 200-word summary
+    summary: str  # Single paragraph summary of the content
     key_points: list[str]  # 3-5 key points
+    key_concepts: list[KeyConcept]  # Key concepts from the original content
     tags: list[str]  # 3-5 tags
     word_count: int  # Total word count
     reading_time: str  # Estimated reading time
     difficulty: str  # beginner/intermediate/advanced
     created_at: datetime  # Creation timestamp
-    qa_pairs: list[QAPair] = field(default_factory=list)  # Q&A pairs
-    quiz: list[QuizQuestion] = field(default_factory=list)  # Quiz questions
 
     def to_dict(self) -> dict:
         """
@@ -88,27 +71,16 @@ class KnowledgeCard:
             "source": self.source,
             "summary": self.summary,
             "key_points": self.key_points,
+            "key_concepts": [
+                {
+                    "term": concept.term,
+                    "definition": concept.definition,
+                }
+                for concept in self.key_concepts
+            ],
             "tags": self.tags,
             "word_count": self.word_count,
             "reading_time": self.reading_time,
             "difficulty": self.difficulty,
             "created_at": self.created_at.isoformat(),
-            "qa_pairs": [
-                {
-                    "question": qa.question,
-                    "answer": qa.answer,
-                    "difficulty": qa.difficulty,
-                }
-                for qa in self.qa_pairs
-            ],
-            "quiz": [
-                {
-                    "type": q.type,
-                    "question": q.question,
-                    "options": q.options,
-                    "correct": q.correct,
-                    "explanation": q.explanation,
-                }
-                for q in self.quiz
-            ],
         }

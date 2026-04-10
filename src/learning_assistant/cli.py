@@ -1,9 +1,10 @@
 """
-Learning Assistant CLI Entry Point.
+SynthesAI CLI Entry Point.
 
-This module provides the main CLI application using Typer.
+SynthesAI - Synthesize Knowledge with AI Intelligence
 """
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +20,8 @@ from learning_assistant.core.plugin_manager import PluginManager
 
 # Create Typer app
 app = typer.Typer(
-    name="learning-assistant",
-    help="A modular, plugin-based AI learning assistant CLI tool",
+    name="synthesai",
+    help="SynthesAI - Synthesize Knowledge with AI Intelligence. AI-powered learning assistant for video summaries, knowledge cards, and vocabulary extraction",
     add_completion=False,
 )
 
@@ -437,22 +438,12 @@ def link(
         for i, point in enumerate(knowledge_card.key_points, 1):
             console.print(f"  {i}. {point}")
 
-        # Display Q&A if available
-        if knowledge_card.qa_pairs:
-            console.print("\n[bold cyan]Q&A Pairs:[/bold cyan]")
-            for i, qa in enumerate(knowledge_card.qa_pairs, 1):
-                console.print(f"\n  [bold]Q{i}:[/bold] {qa.question}")
-                console.print(f"  [bold]A{i}:[/bold] {qa.answer}")
-
-        # Display quiz if available
-        if knowledge_card.quiz:
-            console.print("\n[bold cyan]Quiz:[/bold cyan]")
-            for i, q in enumerate(knowledge_card.quiz, 1):
-                console.print(f"\n  [bold]Q{i}:[/bold] {q.question}")
-                if q.options:
-                    for j, option in enumerate(q.options, ord("A")):
-                        console.print(f"    {chr(j)}. {option}")
-                console.print(f"  [green]Answer: {q.correct}[/green]")
+        # Display key concepts
+        if knowledge_card.key_concepts:
+            console.print("\n[bold cyan]Key Concepts:[/bold cyan]")
+            for i, concept in enumerate(knowledge_card.key_concepts, 1):
+                console.print(f"\n  [bold]{i}. {concept.term}[/bold]")
+                console.print(f"  {concept.definition}")
 
         # Save to file if requested
         if output:
@@ -465,7 +456,7 @@ def link(
                 with output_path.open("w", encoding="utf-8") as f:
                     json.dump(knowledge_card.to_dict(), f, ensure_ascii=False, indent=2)
             else:  # markdown
-                # Generate markdown content
+                # Generate markdown content using new structure
                 md_content = f"""# {knowledge_card.title}
 
 **Source**: {knowledge_card.source}
@@ -485,24 +476,13 @@ def link(
                 for i, point in enumerate(knowledge_card.key_points, 1):
                     md_content += f"{i}. {point}\n"
 
+                if knowledge_card.key_concepts:
+                    md_content += "\n## Key Concepts\n\n"
+                    for concept in knowledge_card.key_concepts:
+                        md_content += f"### {concept.term}\n\n{concept.definition}\n\n"
+
                 if knowledge_card.tags:
                     md_content += f"\n## Tags\n\n{', '.join(knowledge_card.tags)}\n"
-
-                if knowledge_card.qa_pairs:
-                    md_content += "\n## Q&A\n\n"
-                    for i, qa in enumerate(knowledge_card.qa_pairs, 1):
-                        md_content += (
-                            f"### Q{i}: {qa.question}\n\n**A{i}**: {qa.answer}\n\n"
-                        )
-
-                if knowledge_card.quiz:
-                    md_content += "\n## Quiz\n\n"
-                    for i, q in enumerate(knowledge_card.quiz, 1):
-                        md_content += f"### Q{i}: {q.question}\n\n"
-                        if q.options:
-                            for j, option in enumerate(q.options, ord("A")):
-                                md_content += f"- {chr(j)}. {option}\n"
-                        md_content += f"\n**Answer**: {q.correct}\n\n"
 
                 with output_path.open("w", encoding="utf-8") as f:
                     f.write(md_content)
@@ -528,6 +508,7 @@ def vocabulary(
         "", "--text", "-t", help="Source text to extract words from"
     ),
     file: Path = typer.Option(None, "--file", "-f", help="Input file path"),
+    url: str = typer.Option(None, "--url", "-u", help="Web URL to extract content from"),
     word_count: int = typer.Option(
         10, "--count", "-c", help="Number of words to extract (1-50)"
     ),
@@ -546,6 +527,7 @@ def vocabulary(
     Examples:
         la vocabulary --text "Your text here..."
         la vocabulary --file article.txt --count 15
+        la vocabulary --url https://example.com/article --count 10
         la vocabulary --text "..." --difficulty advanced --no-story
     """
     import asyncio
@@ -555,15 +537,47 @@ def vocabulary(
 
     # Get content
     content = text
-    if file:
+    source_type = "text"
+
+    if url:
+        # Fetch content from URL
+        console.print(f"[bold blue]Fetching content from URL:[/bold blue] {url}")
+        try:
+            from learning_assistant.modules.link_learning.content_fetcher import ContentFetcher
+            from learning_assistant.modules.link_learning.content_parser import ContentParser
+            import asyncio as aio
+
+            fetcher = ContentFetcher(timeout=30, max_retries=3)
+            # Use lower min_content_length for vocabulary extraction
+            parser = ContentParser(engine="trafilatura", min_content_length=10)
+
+            html = aio.run(fetcher.fetch(url))
+            if not html:
+                console.print(f"[red]Error:[/red] Failed to fetch URL: {url}")
+                raise typer.Exit(code=1)
+
+            parsed = parser.parse(html, url)
+            content = parsed.content  # Access content attribute
+            source_type = "url"
+
+            if not content.strip():
+                console.print(f"[red]Error:[/red] No content extracted from URL")
+                raise typer.Exit(code=1)
+
+            console.print(f"[green]OK[/green] Fetched {len(content)} characters")
+        except Exception as e:
+            console.print(f"[red]Error fetching URL:[/red] {e}")
+            raise typer.Exit(code=1)
+    elif file:
         if not file.exists():
             console.print(f"[red]Error:[/red] File not found: {file}")
             raise typer.Exit(code=1)
         with file.open("r", encoding="utf-8") as f:
             content = f.read()
+        source_type = "file"
 
     if not content.strip():
-        console.print("[red]Error:[/red] No content provided. Use --text or --file")
+        console.print("[red]Error:[/red] No content provided. Use --text, --file, or --url")
         raise typer.Exit(code=1)
 
     console.print(f"[bold blue]Extracting vocabulary:[/bold blue] {word_count} words")
@@ -631,7 +645,16 @@ def vocabulary(
         table.add_column("Difficulty", style="green", width=12)
 
         for i, card in enumerate(result.vocabulary_cards, 1):
+            # Handle Windows encoding issue with IPA phonetic symbols
             phonetic_str = card.phonetic.us or card.phonetic.uk or "-"
+            # On Windows, skip displaying IPA symbols if they cause encoding issues
+            try:
+                # Test if phonetic can be encoded in console encoding
+                phonetic_str.encode(sys.stdout.encoding or 'utf-8')
+            except (UnicodeEncodeError, AttributeError):
+                # Fall back to placeholder on Windows with GBK encoding
+                phonetic_str = "[See file]"
+
             table.add_row(
                 str(i),
                 card.word,
