@@ -5,6 +5,49 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] - 2026-04-11
+
+### 新增
+
+#### 单词学习模块 - 可视化知识卡片
+- ✅ VocabularyCardGenerator - Editorial风格知识卡片生成器
+- ✅ HTML模板 - vocabulary_card_template_v2.html
+- ✅ PNG渲染 - Playwright高质量图片输出
+- ✅ 新布局设计：
+  - Hero Section（核心单词大字展示）
+  - Story Section（上下文故事，英文为主+中文释义）
+  - Word List Panel（左侧：10个单词+音标+词性+释义）
+  - Word Focus Panel（右侧：6个重点单词详解）
+  - Editorial配色（Claude橙紫色调）
+- ✅ 紧凑布局优化（页面高度1250px）
+- ✅ 音标显示支持（US/UK音标）
+
+#### 单词学习模块 - 核心功能
+- ✅ WordExtractor - LLM驱动的单词提取
+- ✅ PhoneticLookup - 多源音标查询（本地字典+API+LLM）
+- ✅ StoryGenerator - 上下文故事生成
+- ✅ VocabularyCard - 完整单词卡片数据模型
+- ✅ ContextStory - 故事数据模型
+- ✅ 统计分析 - 难度、频率、词性分布
+
+#### CLI命令
+- ✅ `la vocab <content>` - 单词学习命令（计划中）
+- ✅ 支持参数：word_count, difficulty, generate_story
+
+### 变更
+
+- 更新 VocabularyLearningModule 集成 VocabularyCardGenerator
+- 优化卡片布局（多次迭代改进）
+- 修复PNG裁剪问题
+- 清理测试文件
+
+### 技术细节
+
+- 新增 `src/learning_assistant/modules/vocabulary/vocabulary_card_generator.py`
+- 新增 `src/learning_assistant/modules/vocabulary/vocabulary_card_template_v2.html`
+- 新增依赖：Playwright（可选，用于PNG渲染）
+- 添加单元测试和集成测试
+
 ## [0.2.0] - 2026-03-31
 
 ### 新增
@@ -139,15 +182,15 @@
 
 ## [未来版本]
 
-### [0.2.0] - 计划中
+### [0.4.0] - 计划中
 
 #### 新增
-- 🔗 链接学习模块
-- 📚 单词学习模块
 - 🚀 飞书适配器完整实现
 - 📝 思源笔记适配器
+- 📊 单词学习进度追踪
+- 🎯 词汇测验功能
 
-### [0.3.0] - 计划中
+### [0.5.0] - 计划中
 
 #### 新增
 - Obsidian 适配器

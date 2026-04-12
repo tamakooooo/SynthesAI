@@ -357,7 +357,8 @@ class AgentAPI:
 
     async def extract_vocabulary(
         self,
-        content: str,
+        content: str | None = None,
+        url: str | None = None,
         word_count: int = 10,
         difficulty: str = "intermediate",
         generate_story: bool = True,
@@ -367,13 +368,15 @@ class AgentAPI:
         提取词汇并生成单词卡.
 
         执行完整的词汇提取流程：
-        1. LLM提取重要单词
-        2. 生成单词卡（音标、释义、例句等）
-        3. 可选生成上下文短文
-        4. 导出文件
+        1. 从文本或URL获取内容
+        2. LLM提取重要单词
+        3. 生成单词卡（音标、释义、例句等）
+        4. 可选生成上下文短文
+        5. 导出文件（Markdown + Visual Card）
 
         Args:
-            content: 文本内容
+            content: 文本内容（可选，如果提供url）
+            url: 网页链接（可选，如果提供content）
             word_count: 提取单词数量（1-50）
             difficulty: 目标难度（beginner/intermediate/advanced）
             generate_story: 是否生成上下文短文
@@ -383,10 +386,11 @@ class AgentAPI:
             VocabularyResult 对象，包含完整的单词卡信息
 
         Raises:
-            ValueError: 内容为空或参数无效
+            ValueError: 内容和url都为空，或参数无效
             RuntimeError: 处理失败
 
         Example:
+            >>> # 从文本提取
             >>> api = AgentAPI()
             >>> result = await api.extract_vocabulary(
             ...     content="Machine learning is transforming...",
@@ -394,8 +398,19 @@ class AgentAPI:
             ...     difficulty="intermediate"
             ... )
             >>> print(f"Extracted {len(result.vocabulary_cards)} words")
+
+            >>> # 从URL提取
+            >>> result = await api.extract_vocabulary(
+            ...     url="https://example.com/article",
+            ...     word_count=15,
+            ...     generate_card=True
+            ... )
+            >>> print(f"Visual card: {result.files['png_path']}")
         """
         logger.info(f"Extracting vocabulary: {word_count} words")
+
+        if not content and not url:
+            raise ValueError("Either content or url must be provided")
 
         try:
             from learning_assistant.modules.vocabulary import VocabularyLearningModule
@@ -409,6 +424,9 @@ class AgentAPI:
                 "story": {
                     "enabled": generate_story,
                 },
+                "content_fetcher": {
+                    "enabled": True,  # Enable URL support
+                },
             }
 
             # Merge with kwargs
@@ -421,15 +439,17 @@ class AgentAPI:
             # 处理内容
             result = await module.process(
                 content=content,
+                url=url,
                 word_count=word_count,
                 difficulty=difficulty,
                 generate_story=generate_story,
             )
 
             # 构建结果
+            source = url if url else (content[:200] if content else "")
             return VocabularyResult(
                 status="success",
-                content=content[:200],
+                content=source,
                 word_count=len(result.vocabulary_cards),
                 difficulty=difficulty,
                 vocabulary_cards=[card.to_dict() for card in result.vocabulary_cards],

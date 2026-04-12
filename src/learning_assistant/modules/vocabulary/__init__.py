@@ -17,7 +17,6 @@ from loguru import logger
 from learning_assistant.core.base_module import BaseModule
 from learning_assistant.core.event_bus import EventBus
 from learning_assistant.core.exporters import MarkdownExporter
-from learning_assistant.core.exporters.visual_card import VisualCardGenerator
 from learning_assistant.core.history_manager import HistoryManager
 from learning_assistant.core.llm.service import LLMService
 from learning_assistant.core.prompt_manager import PromptManager
@@ -29,6 +28,10 @@ from learning_assistant.modules.vocabulary.models import (
 from learning_assistant.modules.vocabulary.word_extractor import WordExtractor
 from learning_assistant.modules.vocabulary.phonetic_lookup import PhoneticLookup
 from learning_assistant.modules.vocabulary.story_generator import StoryGenerator
+from learning_assistant.modules.vocabulary.vocabulary_card_generator import VocabularyCardGenerator
+from learning_assistant.modules.vocabulary.story_generator import StoryGenerator
+from learning_assistant.modules.link_learning.content_fetcher import ContentFetcher
+from learning_assistant.modules.link_learning.content_parser import ContentParser
 
 
 class VocabularyLearningModule(BaseModule):
@@ -53,7 +56,9 @@ class VocabularyLearningModule(BaseModule):
         self.word_extractor: WordExtractor | None = None
         self.phonetic_lookup: PhoneticLookup | None = None
         self.story_generator: StoryGenerator | None = None
-        self.card_generator: VisualCardGenerator | None = None
+        self.card_generator: VocabularyCardGenerator | None = None
+        self.content_fetcher: ContentFetcher | None = None
+        self.content_parser: ContentParser | None = None
         self.exporter: MarkdownExporter | None = None
         self.llm_service: LLMService | None = None
         self.prompt_manager: PromptManager | None = None
@@ -169,18 +174,36 @@ class VocabularyLearningModule(BaseModule):
                 prompt_manager=self.prompt_manager,
             )
 
-        # Visual card generator (optional)
+        # Vocabulary visual card generator (optional)
         output_config = self.config.get("output", {})
         card_config = output_config.get("visual_card", {})
 
         if card_config.get("enabled", True):
-            self.card_generator = VisualCardGenerator(
-                width=card_config.get("width", 1200),
-                output_format=card_config.get("format", "png")
+            self.card_generator = VocabularyCardGenerator(
+                width=card_config.get("width", 1200)
             )
-            logger.debug("VisualCardGenerator initialized")
+            logger.debug("VocabularyCardGenerator initialized")
         else:
+            self.card_generator = None
             logger.debug("Visual card generation disabled")
+
+        # Content fetcher and parser (for URL support)
+        fetcher_config = self.config.get("content_fetcher", {})
+        if fetcher_config.get("enabled", True):
+            self.content_fetcher = ContentFetcher(
+                timeout=fetcher_config.get("timeout", 30),
+                max_retries=fetcher_config.get("max_retries", 3),
+                retry_delay=fetcher_config.get("retry_delay", 2),
+                use_playwright=fetcher_config.get("use_playwright", False),
+            )
+            self.content_parser = ContentParser(
+                min_content_length=fetcher_config.get("min_content_length", 100),
+            )
+            logger.debug("ContentFetcher and ContentParser initialized for URL support")
+        else:
+            self.content_fetcher = None
+            self.content_parser = None
+            logger.debug("URL content fetching disabled")
 
         # Exporter
         output_config = self.config.get("output", {})
@@ -199,16 +222,18 @@ class VocabularyLearningModule(BaseModule):
 
     async def process(
         self,
-        content: str,
+        content: str | None = None,
+        url: str | None = None,
         word_count: int = 10,
         difficulty: str = "intermediate",
         generate_story: bool = True,
     ) -> VocabularyOutput:
         """
-        Process content and generate vocabulary cards.
+        Process content or URL and generate vocabulary cards.
 
         Args:
-            content: Text content to extract words from
+            content: Text content to extract words from (optional if url provided)
+            url: URL to fetch content from (optional if content provided)
             word_count: Number of words to extract
             difficulty: Target difficulty level
             generate_story: Whether to generate contextual story
@@ -217,11 +242,37 @@ class VocabularyLearningModule(BaseModule):
             VocabularyOutput object
 
         Raises:
-            ValueError: If content is empty
+            ValueError: If both content and url are empty, or fetched content is empty
             RuntimeError: If processing fails
         """
+        # Fetch content from URL if provided
+        if url:
+            if not self.content_fetcher or not self.content_parser:
+                raise RuntimeError("URL content fetching is not enabled in config")
+
+            logger.info(f"Fetching content from URL: {url}")
+
+            try:
+                # Fetch HTML content
+                html_content = await self.content_fetcher.fetch(url)
+                logger.debug(f"Fetched HTML ({len(html_content)} bytes)")
+
+                # Parse and extract text
+                parsed_content = self.content_parser.parse(html_content, url)
+                content = parsed_content.content
+
+                if not content or len(content) < 100:
+                    raise ValueError(f"Content from URL is too short or empty: {url}")
+
+                logger.info(f"Parsed content ({len(content)} chars) from URL")
+
+            except Exception as e:
+                logger.error(f"Failed to fetch/parse URL content: {e}")
+                raise RuntimeError(f"Failed to fetch content from URL: {e}") from e
+
+        # Validate content
         if not content or not content.strip():
-            raise ValueError("Content cannot be empty")
+            raise ValueError("Content cannot be empty (provide content or url)")
 
         logger.info(
             f"Processing content ({len(content)} chars), extracting {word_count} words"
@@ -336,23 +387,6 @@ class VocabularyLearningModule(BaseModule):
             "part_of_speech_distribution": pos_dist,
         }
 
-    def _adapt_to_visual_card(self, output: VocabularyOutput) -> dict[str, Any]:
-        """
-        Adapt VocabularyOutput to visual card data format.
-
-        Converts vocabulary output data to a format compatible with
-        VisualCardGenerator for generating editorial-style knowledge cards.
-
-        Args:
-            output: VocabularyOutput object
-
-        Returns:
-            dict compatible with VisualCardGenerator.generate_card_html()
-        """
-        from .visual_adapter import vocabulary_output_to_card_data
-
-        return vocabulary_output_to_card_data(output)
-
     async def _export_and_save(
         self, output: VocabularyOutput, source: str
     ) -> dict[str, str]:
@@ -384,14 +418,17 @@ class VocabularyLearningModule(BaseModule):
             )
             logger.info(f"Exported to: {output_path}")
 
-        # Generate visual card (NEW)
+        # Generate vocabulary visual card (NEW)
         if self.card_generator:
             try:
-                # Adapt data for visual card
-                card_data = self._adapt_to_visual_card(output)
-
                 # Generate HTML template
-                html_content = self.card_generator.generate_card_html(**card_data)
+                html_content = self.card_generator.generate_card_html(output)
+
+                # Save HTML template
+                html_path = output_path.with_suffix(".html")
+                html_path.parent.mkdir(parents=True, exist_ok=True)
+                html_path.write_text(html_content, encoding="utf-8")
+                logger.info(f"Vocabulary card HTML saved to {html_path}")
 
                 # Render PNG image
                 png_path = output_path.with_suffix(".png")
@@ -401,11 +438,11 @@ class VocabularyLearningModule(BaseModule):
                     width=1200,
                     scale=2.0,
                 )
-                logger.info(f"Visual card PNG saved to {png_path}")
+                logger.info(f"Vocabulary card PNG saved to {png_path}")
             except ImportError:
-                logger.warning("Playwright not installed, visual card not rendered (PNG skipped)")
+                logger.warning("Playwright not installed, PNG rendering skipped (HTML available)")
             except Exception as e:
-                logger.error(f"Failed to generate visual card: {e}")
+                logger.error(f"Failed to generate vocabulary card: {e}")
 
         # Save to history
         if self.history_manager:
@@ -435,14 +472,16 @@ class VocabularyLearningModule(BaseModule):
         Execute vocabulary learning workflow (sync wrapper).
 
         Args:
-            input_data: Input data containing content
+            input_data: Input data containing content or url
 
         Returns:
             Vocabulary output as dict
         """
         content = input_data.get("content") or input_data.get("text")
-        if not content:
-            raise ValueError("Content/text is required")
+        url = input_data.get("url")
+
+        if not content and not url:
+            raise ValueError("Content/text or URL is required")
 
         word_count = input_data.get("word_count", 10)
         difficulty = input_data.get("difficulty", "intermediate")
@@ -452,6 +491,7 @@ class VocabularyLearningModule(BaseModule):
         output = asyncio.run(
             self.process(
                 content=content,
+                url=url,
                 word_count=word_count,
                 difficulty=difficulty,
                 generate_story=generate_story,
@@ -459,12 +499,16 @@ class VocabularyLearningModule(BaseModule):
         )
 
         # Export and save
-        files = asyncio.run(self._export_and_save(output, content))
+        source = url if url else content[:200]
+        files = asyncio.run(self._export_and_save(output, source))
 
         # Return as dict
         result = output.to_dict()
         result["files"] = files
         result["status"] = "success"
         result["timestamp"] = datetime.now().isoformat()
+
+        if url:
+            result["source_url"] = url
 
         return result

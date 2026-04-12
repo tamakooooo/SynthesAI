@@ -11,7 +11,7 @@ description: |
   - Needs contextual stories for vocabulary retention
 
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   author: Learning Assistant Team
 ---
 
@@ -28,6 +28,8 @@ This skill intelligently extracts important vocabulary from text and creates str
 - ✅ Multi-layer phonetic lookup (local dictionary → API → LLM fallback)
 - ✅ Complete word cards with definitions, examples, synonyms
 - ✅ Contextual story generation for memory retention
+- ✅ **Visual knowledge card generation (Editorial style)**
+- ✅ **PNG export with high-resolution (2x scaling)**
 - ✅ Multiple difficulty levels (beginner/intermediate/advanced)
 - ✅ Support for text input, files, or URLs
 
@@ -36,13 +38,15 @@ This skill intelligently extracts important vocabulary from text and creates str
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | content | string | ✅* | - | Text content to extract words from |
-| file | Path | ✅* | - | Input file path (alternative to content) |
+| url | string | ✅* | - | URL to fetch content from (alternative to content) |
+| file | Path | ✅* | - | Input file path (alternative to content/url) |
 | word_count | integer | ❌ | 10 | Number of words to extract (1-50) |
 | difficulty | string | ❌ | intermediate | Target difficulty (beginner/intermediate/advanced) |
 | generate_story | boolean | ❌ | true | Generate contextual story |
+| generate_card | boolean | ❌ | true | Generate visual knowledge card |
 | output_dir | string | ❌ | ./outputs/vocabulary | Output directory |
 
-*One of `content` or `file` is required
+*One of `content`, `url`, or `file` is required
 
 ## Quick Start
 
@@ -51,9 +55,16 @@ This skill intelligently extracts important vocabulary from text and creates str
 ```python
 from learning_assistant.api import extract_vocabulary
 
-# Basic usage
+# Basic usage - from text
 result = await extract_vocabulary(
     content="Machine learning is transforming industries across the globe..."
+)
+
+# From URL (NEW!)
+result = await extract_vocabulary(
+    url="https://example.com/blog/article",
+    word_count=15,
+    difficulty="advanced"
 )
 
 # With options
@@ -87,11 +98,14 @@ result = extract_vocabulary_sync(
 # From text
 la vocabulary --text "Machine learning is revolutionizing..."
 
+# From URL (NEW!)
+la vocabulary --url "https://example.com/article"
+
 # From file
 la vocabulary --file article.txt
 
 # With options
-la vocabulary --file article.txt \
+la vocabulary --url "https://example.com/blog" \
   --count 15 \
   --difficulty advanced \
   --no-story
@@ -154,7 +168,9 @@ Returns JSON object:
     }
   },
   "files": {
-    "markdown_path": "./outputs/vocabulary_20260408.md"
+    "markdown_path": "./outputs/vocabulary_20260408.md",
+    "html_path": "./outputs/vocabulary_20260408.html",
+    "png_path": "./outputs/vocabulary_20260408.png"
   },
   "timestamp": "2026-04-08T10:30:00"
 }
@@ -166,7 +182,10 @@ Returns JSON object:
 2. **Phonetic Lookup** (Multi-layer) - Fetch phonetics via local dictionary → API → LLM fallback
 3. **Card Generation** (LLM) - Generate complete word cards with definitions, examples, synonyms
 4. **Story Creation** (LLM, optional) - Create contextual story containing target words
-5. **Export** - Save to Markdown/JSON format with history tracking
+5. **Visual Card Generation** (HTML+PNG, optional) - Generate Editorial-style visual knowledge card
+   - Build HTML template with word grid, story, and detail panels
+   - Render PNG image using Playwright (2x scaling for high DPI)
+6. **Export** - Save to Markdown/JSON/HTML/PNG format with history tracking
 
 ## Performance
 
@@ -285,6 +304,16 @@ print(f"Saved to: {result['files']['markdown_path']}")
 2. **Phonetic Accuracy**: Depends on dictionary data availability
 3. **Content Length**: Very long texts (>10,000 words) may need splitting
 4. **Story Quality**: Story coherence depends on LLM model capability
+5. **URL Fetching**: Some websites may block fetching (403 errors) - use alternative sources or provide text directly
+
+## URL Support Notes
+
+When using `url` parameter:
+- Content is fetched using aiohttp (fast, simple HTTP client)
+- Trafilatura extracts clean text from HTML
+- Minimum content length: 100 characters (configurable)
+- Some websites with anti-bot measures may return 403/404 errors
+- Alternative: Manually copy-paste text and use `content` parameter
 
 ## Error Handling
 
@@ -355,6 +384,76 @@ story = await story_generator.generate(
 )
 ```
 
+## Visual Knowledge Cards
+
+### Overview
+
+The vocabulary module generates Editorial-style visual knowledge cards suitable for sharing and learning. These cards feature:
+
+- **Editorial Layout**: Magazine-style design with careful typography
+- **Claude Colors**: Orange (#FF6B35) and purple (#764BA2) accent colors
+- **1200px Width**: Optimized for social media and presentation
+- **High Resolution**: 2x scaling for crisp display on high DPI devices
+
+### Card Layout
+
+```
+┌─────────────────────────────────────────┐
+│ Hero Section                             │
+│ 核心单词大字展示 (48px Playfair Display) │
+└─────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ Story Section (深色面板)                  │
+│ 上下文故事（英文为主 + 重点单词中文释义）   │
+└─────────────────────────────────────────┘
+┌─────────────────────┬───────────────────┐
+│ Word List (左侧)    │ Word Focus (右侧) │
+│ 10个单词简要展示     │ 6个单词详细解释   │
+│ (序号+单词+音标+    │ (序号+单词+释义   │
+│  词性+释义)         │  +例句)           │
+└─────────────────────┴───────────────────┘
+┌─────────────────────────────────────────┐
+│ Bottom Bar + Footer                      │
+│ 统计信息 + SynthesAI branding             │
+└─────────────────────────────────────────┘
+```
+
+### Generation Options
+
+```python
+result = await extract_vocabulary(
+    content="Your text...",
+    generate_card=True,  # Enable visual card generation
+)
+
+# Access generated files
+html_path = result['files']['html_path']
+png_path = result['files']['png_path']
+```
+
+### Requirements
+
+Visual card generation requires **Playwright** for PNG rendering:
+
+```bash
+pip install playwright
+playwright install chromium
+```
+
+If Playwright is not installed, HTML cards will still be generated (can be opened in browser for manual screenshot).
+
+### Card Sizes
+
+| Component | Size |
+|-----------|------|
+| Card width | 1200px (fixed) |
+| Hero font | 48px Playfair Display |
+| Story font | 14px Noto Sans SC |
+| Word list font | 17px (words) + 13px (info) |
+| Word focus font | 17px (words) + 13px (defs) |
+| PNG resolution | 2400x2500px (2x scaling) |
+| PNG file size | ~180KB (high quality) |
+
 ## Related Skills
 
 - **video-summary** - Extract vocabulary from video transcriptions
@@ -369,6 +468,6 @@ story = await story_generator.generate(
 
 ---
 
-**Version**: 1.0.0
-**Last Updated**: 2026-04-08
+**Version**: 2.0.0
+**Last Updated**: 2026-04-11
 **Maintainer**: Learning Assistant Team

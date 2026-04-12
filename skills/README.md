@@ -1,7 +1,7 @@
 # Learning Assistant Skills
 
-> **Version**: v0.2.0
-> **Last Updated**: 2026-03-31
+> **Version**: v0.3.0
+> **Last Updated**: 2026-04-11
 
 Claude Code Skills for Learning Assistant - standardized, reusable capabilities following the Claude Code Skills Specification (2026).
 
@@ -25,6 +25,7 @@ Skills are modular, reusable capabilities packaged as standardized `SKILL.md` fi
 |-------|-------------|--------|
 | [video-summary](video-summary/SKILL.md) | Summarizes video content from URLs (B站/YouTube/抖音) | ✅ Available |
 | [link-learning](link-learning/SKILL.md) | Extracts knowledge from web links and generates knowledge cards | ✅ Available |
+| [vocabulary](vocabulary/SKILL.md) | Extracts vocabulary from text and generates visual knowledge cards | ✅ Available |
 | [list-skills](list-skills/SKILL.md) | Lists all available Learning Assistant skills | ✅ Available |
 | [learning-history](learning-history/SKILL.md) | Queries learning history records | ✅ Available |
 
@@ -184,6 +185,8 @@ description: |
 | Skill | Execution Time | Notes |
 |-------|---------------|-------|
 | video-summary | 3-14 min | Depends on video length |
+| link-learning | 10-30s | Web fetching + processing |
+| vocabulary | <60s | Word extraction + card generation |
 | list-skills | <10ms | Very fast |
 | learning-history | <100ms | Fast for most queries |
 
