@@ -255,21 +255,9 @@ async def get_qr_code(platform: str):
         # Generate QR code using internal method
         qr_session = provider._generate_qr()
 
-        # Generate QR code image using qr-display module
-        try:
-            from learning_assistant.auth.qr_display import save_qr_image
-            qr_image_path = save_qr_image(qr_session.qr_url, "bilibili_qr.png")
-
-            if qr_image_path and qr_image_path.exists():
-                with open(qr_image_path, "rb") as f:
-                    qr_base64 = base64.b64encode(f.read()).decode()
-                qr_url = f"data:image/png;base64,{qr_base64}"
-            else:
-                # Fallback: use the URL directly
-                qr_url = qr_session.qr_url
-        except Exception as e:
-            # Fallback: return QR URL for user to scan
-            qr_url = qr_session.qr_url
+        # Return the login URL directly - frontend will encode it as QR code
+        # (Don't return base64 image data as frontend will encode it again)
+        qr_url = qr_session.qr_url
 
         return QRCodeResponse(
             platform=platform,

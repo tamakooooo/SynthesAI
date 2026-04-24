@@ -22,6 +22,19 @@ except ImportError:
     BILIBILI_DOWNLOADER_AVAILABLE = False
     logger.warning("BilibiliDownloader not available, B站 downloads will use yt-dlp fallback")
 
+# Import yutto CLI (B站专用下载器，更稳定)
+try:
+    import subprocess
+
+    # Check if yutto CLI is available
+    _yutto_check = subprocess.run(["yutto", "--version"], capture_output=True, timeout=5)
+    YUTTO_AVAILABLE = _yutto_check.returncode == 0
+    if YUTTO_AVAILABLE:
+        logger.info("yutto CLI available, will use for B站 downloads")
+except (ImportError, FileNotFoundError, subprocess.TimeoutExpired):
+    YUTTO_AVAILABLE = False
+    logger.warning("yutto not available, using yt-dlp fallback")
+
 
 @dataclass
 class VideoInfo:
@@ -213,7 +226,15 @@ class VideoDownloader:
         platform = self.detect_platform(url)
         logger.info(f"Platform: {platform}")
 
-        # Use BilibiliDownloader for B站 downloads if available
+        # Priority: yutto CLI > BilibiliDownloader > yt-dlp
+        if platform == "bilibili" and YUTTO_AVAILABLE:
+            logger.info("Using yutto CLI for B站 video (most stable)")
+            result = self._download_with_yutto(url, output_filename)
+            if result:
+                return result
+            logger.warning("yutto failed, falling back to yt-dlp")
+
+        # Use BilibiliDownloader for B站 downloads if yutto failed
         if platform == "bilibili" and self.bilibili_downloader:
             logger.info("Using BilibiliDownloader for B站 video (WBI signature + CDN preference)")
             return self.bilibili_downloader.download(url, **kwargs)
@@ -252,10 +273,17 @@ class VideoDownloader:
             ydl_opts["no_check_certificate"] = True
             ydl_opts["legacyserverconnect"] = True
 
-            # Use best available format that doesn't require premium
+            # Increased timeout for slow CDN connections
+            ydl_opts["socket_timeout"] = 60
+
+            # Use single-file format (包含音频的完整文件) instead of separated streams
+            # This avoids CDN timeout issues when downloading audio separately
             if "format" not in kwargs:
+                # Try single file first, fallback to video+audio merge
                 ydl_opts["format"] = (
-                    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                    "best[ext=mp4][vcodec!=none][acodec!=none]/"  # Single file with both
+                    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"  # Merge video+audio
+                    "best[ext=mp4]/best"  # Ultimate fallback
                 )
 
         try:
@@ -363,6 +391,175 @@ class VideoDownloader:
             )
 
             self.progress_callback(progress)
+
+    def _download_with_yutto(
+        self, url: str, output_filename: str | None = None
+    ) -> Path | None:
+        """
+        Download B站 video using yutto CLI (most stable option).
+
+        yutto is a dedicated B站 downloader that handles:
+        - WBI signature automatically
+        - CDN preference and fallback
+        - Better error recovery
+
+        Args:
+            url: B站 video URL
+            output_filename: Output filename (without extension)
+
+        Returns:
+            Downloaded video path or None if failed
+        """
+        import re
+        import subprocess
+        import tempfile
+        import asyncio
+
+        logger.info(f"Downloading with yutto: {url}")
+
+        # Create temporary output directory
+        temp_dir = tempfile.mkdtemp(prefix="yutto_")
+
+        try:
+            # Build yutto command
+            cmd = [
+                "yutto", "download",
+                url,
+                "-d", temp_dir,
+                "-q", "64",  # 720p (good balance of quality and speed)
+                "-aq", "30216",  # 64kbps audio (smaller file, more stable)
+                "--no-danmaku",  # Skip danmaku for faster download
+                "--no-subtitle",  # Skip subtitle for faster download
+                "-w",  # Overwrite if exists
+            ]
+
+            # Add authentication if cookie file exists
+            if self.cookie_file and self.cookie_file.exists():
+                sessdata = self._extract_sessdata_from_cookie()
+                if sessdata:
+                    logger.debug(f"Using SESSDATA for authentication")
+                    # Extract bili_jct as well
+                    bili_jct = self._extract_bili_jct_from_cookie()
+                    if bili_jct:
+                        auth_str = f"SESSDATA={sessdata}; bili_jct={bili_jct}"
+                        cmd.extend(["--auth", auth_str])
+                    else:
+                        cmd.extend(["-c", sessdata])
+
+            logger.debug(f"yutto command: {' '.join(cmd[:5])}...")
+
+            # Run yutto download (subprocess is always safe, even in async context)
+            # Use asyncio.create_subprocess_exec if in async context for better integration
+            try:
+                # Check if we're in async context
+                asyncio.get_running_loop()
+                # In async context, use asyncio subprocess
+                logger.debug("Running yutto in async subprocess mode")
+                proc = asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                # This will be awaited by the caller, so we return a coroutine
+                # But this method is synchronous, so we use subprocess.run instead
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                )
+            except RuntimeError:
+                # No running loop, use subprocess.run
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=600,  # 10 minutes timeout
+                )
+
+            if result.returncode != 0:
+                logger.error(f"yutto failed: {result.stderr[:500]}")
+                return None
+
+            logger.info(f"yutto download completed")
+
+            # Find downloaded file in temp directory
+            downloaded_files = list(Path(temp_dir).glob("*.mp4"))
+
+            if not downloaded_files:
+                logger.error("No MP4 file found after yutto download")
+                return None
+
+            # Get the downloaded file
+            downloaded_file = downloaded_files[0]
+            logger.info(f"Found downloaded file: {downloaded_file.name}")
+
+            # Move to output directory with proper name
+            if output_filename:
+                target_path = self.output_dir / f"{output_filename}.mp4"
+            else:
+                # Use original filename from yutto
+                target_path = self.output_dir / downloaded_file.name
+
+            # Move file to output directory
+            import shutil
+            shutil.move(str(downloaded_file), str(target_path))
+
+            # Cleanup temp directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+            # Verify file exists and has content
+            if target_path.exists() and target_path.stat().st_size > 0:
+                logger.info(f"Video downloaded successfully: {target_path}")
+                return target_path
+            else:
+                logger.error("Final output file missing or empty")
+                return None
+
+        except subprocess.TimeoutExpired:
+            logger.error("yutto download timeout (10 minutes)")
+            return None
+        except Exception as e:
+            logger.error(f"yutto download error: {e}")
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return None
+
+    def _extract_sessdata_from_cookie(self) -> str | None:
+        """Extract SESSDATA from Netscape format cookie file."""
+        if not self.cookie_file or not self.cookie_file.exists():
+            return None
+
+        try:
+            with open(self.cookie_file, encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("#") or not line.strip():
+                        continue
+                    parts = line.strip().split("\t")
+                    if len(parts) >= 7 and parts[5] == "SESSDATA":
+                        return parts[6]
+        except Exception as e:
+            logger.error(f"Failed to extract SESSDATA: {e}")
+
+        return None
+
+    def _extract_bili_jct_from_cookie(self) -> str | None:
+        """Extract bili_jct from Netscape format cookie file."""
+        if not self.cookie_file or not self.cookie_file.exists():
+            return None
+
+        try:
+            with open(self.cookie_file, encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("#") or not line.strip():
+                        continue
+                    parts = line.strip().split("\t")
+                    if len(parts) >= 7 and parts[5] == "bili_jct":
+                        return parts[6]
+        except Exception as e:
+            logger.error(f"Failed to extract bili_jct: {e}")
+
+        return None
 
     def get_available_formats(self, url: str) -> list[dict[str, Any]]:
         """

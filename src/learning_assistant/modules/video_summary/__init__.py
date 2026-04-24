@@ -349,7 +349,9 @@ class VideoSummaryModule(BaseModule):
 
         # Move to expected location
         if extracted_path != audio_path:
-            extracted_path.rename(audio_path)
+            # Use shutil.move for cross-device compatibility
+            import shutil
+            shutil.move(str(extracted_path), str(audio_path))
 
         # Get audio info
         audio_info = self.audio_extractor.get_audio_info(audio_path)

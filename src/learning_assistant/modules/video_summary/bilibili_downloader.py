@@ -567,13 +567,209 @@ class BilibiliDownloader:
             Downloaded video path or None if failed
         """
         try:
-            return asyncio.run(self.download_async(url, video_quality, audio_quality, **kwargs))
+            # Check if we're already in an async context
+            import asyncio
+            try:
+                asyncio.get_running_loop()
+                # We're in an async context, use asyncio.create_task instead
+                logger.warning("Already in async context, using sync fallback")
+                # Fallback to synchronous httpx client
+                return self._download_sync_fallback(url, video_quality, audio_quality, **kwargs)
+            except RuntimeError:
+                # No running loop, safe to use asyncio.run()
+                return asyncio.run(self.download_async(url, video_quality, audio_quality, **kwargs))
         except KeyboardInterrupt:
             logger.info("Download interrupted")
             return None
         except Exception as e:
             logger.error(f"Download error: {e}")
             return None
+
+    def _download_sync_fallback(
+        self,
+        url: str,
+        video_quality: int = 80,
+        audio_quality: int = 30280,
+        **kwargs: Any,
+    ) -> Path | None:
+        """
+        Synchronous fallback when already in async context.
+        Uses synchronous httpx client.
+
+        Args:
+            url: B站 video URL
+            video_quality: Video quality ID
+            audio_quality: Audio quality ID
+            **kwargs: Additional options
+
+        Returns:
+            Downloaded video path or None if failed
+        """
+        import re
+        import httpx
+
+        try:
+            # Extract BV ID from URL
+            match = re.search(r"BV[\w]+", url)
+            if not match:
+                logger.error(f"Invalid B站 URL: {url}")
+                return None
+
+            bvid = match.group(0)
+            logger.info(f"Downloading B站 video (sync fallback): {bvid}")
+
+            # Use sync client
+            sync_client = httpx.Client(
+                headers=self.HEADERS,
+                cookies={"SESSDATA": self.sessdata} if self.sessdata else None,
+                timeout=httpx.Timeout(30.0, connect=10.0),
+                follow_redirects=True,
+            )
+
+            # Get video info (sync)
+            resp = sync_client.get(
+                self.API_VIDEO_INFO,
+                params={"bvid": bvid},
+            )
+            data = resp.json()
+
+            if data.get("code") != 0:
+                logger.error(f"Failed to get video info: {data.get('message')}")
+                sync_client.close()
+                return None
+
+            video_info = data["data"]
+            title = video_info["title"]
+            cid = video_info["cid"]
+            logger.info(f"Video title: {title}")
+
+            # Get WBI keys and playurl
+            self._get_wbi_keys_sync(sync_client)
+
+            params = {
+                "bvid": bvid,
+                "cid": cid,
+                "qn": 127,
+                "fnval": 4048,
+                "fourk": 1,
+            }
+            signed_url = f"{self.API_PLAYURL}?{self._sign_wbi(params)}"
+
+            resp = sync_client.get(signed_url)
+            data = resp.json()
+
+            if data.get("code") != 0:
+                logger.error(f"Failed to get playurl: {data.get('message')}")
+                sync_client.close()
+                return None
+
+            playurl_data = data["data"]
+            if "dash" not in playurl_data:
+                logger.error("DASH format not available")
+                sync_client.close()
+                return None
+
+            dash_data = playurl_data["dash"]
+            video_stream, audio_stream = self._select_best_streams(
+                dash_data, video_quality, audio_quality
+            )
+
+            # Prepare output paths
+            safe_title = re.sub(r'[<>:"/\\|?*]', "_", title)[:100]
+            temp_video = self.output_dir / f"{safe_title}_video.m4s"
+            temp_audio = self.output_dir / f"{safe_title}_audio.m4s"
+            final_output = self.output_dir / f"{safe_title}.mp4"
+
+            # Download video (sync)
+            if not self._download_file_sync(sync_client, video_stream["url"], temp_video, "video stream"):
+                sync_client.close()
+                return None
+
+            # Download audio (sync)
+            if not self._download_file_sync(sync_client, audio_stream["url"], temp_audio, "audio stream"):
+                temp_video.unlink(missing_ok=True)
+                sync_client.close()
+                return None
+
+            # Merge with FFmpeg
+            if not self._merge_video_audio(temp_video, temp_audio, final_output):
+                temp_video.unlink(missing_ok=True)
+                temp_audio.unlink(missing_ok=True)
+                sync_client.close()
+                return None
+
+            # Cleanup
+            temp_video.unlink(missing_ok=True)
+            temp_audio.unlink(missing_ok=True)
+            sync_client.close()
+
+            if final_output.exists() and final_output.stat().st_size > 0:
+                logger.info(f"Download successful (sync fallback): {final_output}")
+                return final_output
+            else:
+                logger.error("Final output missing or empty")
+                return None
+
+        except Exception as e:
+            logger.error(f"Sync fallback download failed: {e}")
+            return None
+
+    def _get_wbi_keys_sync(self, client: httpx.Client) -> None:
+        """Get WBI keys using sync client."""
+        import time
+        from functools import reduce
+
+        if self.mixin_key and time.time() - self.wbi_keys_updated_at < 1800:
+            return
+
+        resp = client.get(self.API_NAV)
+        data = resp.json()
+
+        if data.get("code") != 0:
+            return
+
+        wbi_img = data["data"]["wbi_img"]
+        img_url = wbi_img["img_url"]
+        sub_url = wbi_img["sub_url"]
+
+        self.img_key = img_url.rsplit("/", 1)[1].split(".")[0]
+        self.sub_key = sub_url.rsplit("/", 1)[1].split(".")[0]
+
+        combined = self.img_key + self.sub_key
+        self.mixin_key = reduce(
+            lambda s, i: s + combined[i], self.MIXIN_KEY_ENC_TAB, ""
+        )[:32]
+        self.wbi_keys_updated_at = time.time()
+
+    def _download_file_sync(
+        self,
+        client: httpx.Client,
+        url: str,
+        output_path: Path,
+        description: str = "file",
+    ) -> bool:
+        """Download file using sync client."""
+        try:
+            logger.info(f"Downloading {description}...")
+            headers = {**self.HEADERS}
+
+            with client.stream("GET", url, headers=headers) as response:
+                response.raise_for_status()
+
+                total_size = int(response.headers.get("content-length", 0))
+                downloaded = 0
+
+                with open(output_path, "wb") as f:
+                    for chunk in response.iter_bytes(chunk_size=8192):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+            logger.info(f"{description} downloaded: {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to download {description}: {e}")
+            return False
 
     async def close(self) -> None:
         """Close HTTP client."""

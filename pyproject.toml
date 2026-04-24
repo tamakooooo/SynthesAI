@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "synthesai"
-version = "0.2.0"
+version = "0.3.1"
 description = "SynthesAI - Synthesize Knowledge with AI Intelligence. AI-powered learning assistant for video summaries, knowledge cards, and vocabulary extraction"
 readme = "README.md"
 requires-python = ">=3.11"

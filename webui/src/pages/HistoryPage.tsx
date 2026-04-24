@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { getHistory, HistoryRecord } from '../services/api';
+import { getHistory, getVideoTaskResult, HistoryRecord, VideoResult } from '../services/api';
+import {
+  videoResultToMarkdown,
+  exportMarkdown,
+  exportPdfViaPrint,
+  downloadTranscript,
+  sanitizeFilename,
+  getTimestamp,
+} from '../utils/export';
 
 const HistoryPage: React.FC = () => {
   const [records, setRecords] = useState<HistoryRecord[]>([]);
@@ -7,6 +15,9 @@ const HistoryPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
+  const [selectedRecord, setSelectedRecord] = useState<HistoryRecord | null>(null);
+  const [result, setResult] = useState<VideoResult | null>(null);
+  const [loadingResult, setLoadingResult] = useState(false);
 
   useEffect(() => {
     loadHistory();
@@ -54,6 +65,42 @@ const HistoryPage: React.FC = () => {
       default:
         return module;
     }
+  };
+
+  const handleViewRecord = async (record: HistoryRecord) => {
+    setSelectedRecord(record);
+    setResult(null);
+    setError(null);
+
+    if (record.module === 'video_summary') {
+      setLoadingResult(true);
+      try {
+        const videoResult = await getVideoTaskResult(record.id);
+        setResult(videoResult);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '获取结果失败');
+      } finally {
+        setLoadingResult(false);
+      }
+    }
+  };
+
+  const handleExportMarkdown = () => {
+    if (!result) return;
+    const md = videoResultToMarkdown(result);
+    const filename = `${sanitizeFilename(result.title || '视频总结')}_${getTimestamp()}.md`;
+    exportMarkdown(md, filename);
+  };
+
+  const handleExportPdf = () => {
+    if (!result) return;
+    const md = videoResultToMarkdown(result);
+    exportPdfViaPrint(md, result.title || '视频内容总结');
+  };
+
+  const handleDownloadTranscript = () => {
+    if (!result || !result.transcript) return;
+    downloadTranscript(result.transcript, result.title || '视频字幕');
   };
 
   return (
@@ -114,7 +161,15 @@ const HistoryPage: React.FC = () => {
       {!loading && records.length > 0 && (
         <div className="space-y-sm">
           {records.map((record) => (
-            <div key={record.id} className="card">
+            <div
+              key={record.id}
+              onClick={() => handleViewRecord(record)}
+              className={`card cursor-pointer transition-all ${
+                selectedRecord?.id === record.id
+                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                  : 'hover:border-gray-300 hover:bg-gray-50'
+              }`}
+            >
               <div className="flex items-start justify-between gap-md">
                 {/* Status and info */}
                 <div className="flex items-center gap-sm">
@@ -144,6 +199,82 @@ const HistoryPage: React.FC = () => {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Loading result */}
+      {loadingResult && (
+        <div className="text-center py-xl">
+          <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full mx-auto" />
+          <p className="text-secondary mt-sm">加载结果中...</p>
+        </div>
+      )}
+
+      {/* Result Display */}
+      {result && selectedRecord && (
+        <div className="card space-y-md">
+          <div>
+            <h2 className="text-h2 text-primary">{result.title}</h2>
+            <p className="text-sm text-secondary mt-xs">
+              {(result.metadata?.duration as string | number | undefined)?.toString() || ''} · {(result.metadata?.platform as string | undefined) || ''}
+            </p>
+          </div>
+
+          {/* Summary */}
+          <div>
+            <h3 className="text-h3 text-primary mb-sm">内容总结</h3>
+            <p className="text-primary leading-relaxed whitespace-pre-wrap">
+              {result.summary?.content || ''}
+            </p>
+          </div>
+
+          {/* Key points */}
+          {result.summary?.key_points && result.summary.key_points.length > 0 && (
+            <div>
+              <h3 className="text-h3 text-primary mb-sm">核心要点</h3>
+              <ul className="space-y-xs">
+                {result.summary.key_points.map((point, i) => (
+                  <li key={i} className="flex items-start gap-sm">
+                    <span className="text-accent">•</span>
+                    <span className="text-primary">{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Transcript preview */}
+          {result.transcript && (
+            <div>
+              <h3 className="text-h3 text-primary mb-sm">字幕预览</h3>
+              <div className="bg-highlight-yellow rounded-md p-md font-mono text-sm text-primary max-h-[200px] overflow-y-auto whitespace-pre-wrap">
+                {result.transcript.slice(0, 500)}...
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-sm pt-md border-t border-border">
+            <button
+              onClick={handleExportMarkdown}
+              className="btn-secondary hover:bg-highlight-yellow"
+            >
+              导出 Markdown
+            </button>
+            <button
+              onClick={handleExportPdf}
+              className="btn-secondary hover:bg-highlight-blue"
+            >
+              导出 PDF
+            </button>
+            <button
+              onClick={handleDownloadTranscript}
+              disabled={!result?.transcript}
+              className="btn-secondary hover:bg-highlight-green disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              下载字幕
+            </button>
+          </div>
         </div>
       )}
     </div>

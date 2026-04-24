@@ -7,6 +7,7 @@ interface SidebarProps {
 }
 
 const navItems = [
+  { path: '/', label: '学习看板', icon: '🏠' },
   { path: '/link', label: '知识卡片', icon: '📚' },
   { path: '/vocabulary', label: '词汇学习', icon: '📝' },
   { path: '/video', label: '视频总结', icon: '🎬' },
@@ -68,7 +69,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
         {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 p-md border-t border-border">
-          <p className="text-sm text-secondary">v0.2.0</p>
+          <p className="text-sm text-secondary">v0.3.1</p>
         </div>
       </aside>
     </>

@@ -4,21 +4,34 @@
 FROM python:3.11-slim
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+# - ffmpeg: video/audio processing (extract audio from video)
+# - curl: health check and API requests
+# - ca-certificates: SSL/TLS certificates for HTTPS connections
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && ffmpeg -version
 
 # Set working directory
 WORKDIR /app
 
 # Copy and install dependencies
+# Includes yutto (B站下载器), yt-dlp, faster-whisper, etc.
 COPY pyproject.toml .
-RUN pip install --no-cache-dir ".[server,link]"
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir ".[server,link]" \
+    # Verify critical dependencies are installed
+    && python -c "import yt_dlp; import yutto; print('Dependencies OK')"
 
 # Copy application code
 COPY src/ src/
 COPY config/ config/
 COPY templates/ templates/
+
+# Create necessary directories
+RUN mkdir -p /app/data/downloads /app/data/audio /app/data/cache /app/config/cookies
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1

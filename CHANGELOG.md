@@ -5,6 +5,48 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.1] - 2026-04-24
+
+### 修复
+
+#### B站二维码登录
+- 🔧 修复二维码登录流程：后端直接返回登录URL而非base64图像
+- 🔧 修复前端二次编码导致二维码内容错误的问题
+- 🔧 添加 `QRStatus.ERROR` 枚举成员，修复轮询异常
+
+#### 视频下载稳定性
+- 🔧 集成 yutto 作为 B站下载优先选择（解决CDN超时问题）
+- 🔧 优化 yt-dlp 下载策略：增加超时时间、重试次数
+- 🔧 修复音频流下载失败导致视频文件缺少音频的问题
+
+### 新增
+
+#### yutto 集成
+- ✅ 自动检测 yutto CLI 可用性
+- ✅ B站下载优先级：yutto > BilibiliDownloader > yt-dlp
+- ✅ 自动从 cookie 文件提取 SESSDATA 和 bili_jct
+- ✅ 支持 `--auth` 参数传递认证信息
+
+#### Docker 优化
+- ✅ Dockerfile 更新：添加 curl、ca-certificates
+- ✅ 依赖验证：确保 yutto、yt-dlp 正确安装
+- ✅ 创建必要目录结构
+
+### 变更
+
+- VideoDownloader 新增 `_download_with_yutto()` 方法
+- Dockerfile 优化系统依赖安装流程
+- pyproject.toml 已包含 `yutto>=2.2.0` 依赖
+
+### 技术细节
+
+- 修改 `src/learning_assistant/server/routes/auth.py` - 返回URL而非base64
+- 修改 `src/learning_assistant/auth/models.py` - 添加 QRStatus.ERROR
+- 修改 `src/learning_assistant/modules/video_summary/downloader.py` - yutto集成
+- 修改 `docker/Dockerfile` - 依赖和目录优化
+
+---
+
 ## [0.3.0] - 2026-04-11
 
 ### 新增

@@ -7,7 +7,7 @@ videos, articles, and text into structured learning materials.
 From Complexity to Clarity.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.1"
 __author__ = "SynthesAI Team"
 __package__ = "synthesai"
 

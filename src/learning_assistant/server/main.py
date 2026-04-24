@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SynthesAI Server",
     description="HTTP API for AI-powered learning assistant",
-    version="0.2.0",
+    version="0.3.1",
     lifespan=lifespan,
 )
 

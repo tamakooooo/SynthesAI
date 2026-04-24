@@ -25,6 +25,7 @@ class QRStatus(str, Enum):
     SCANNED = "scanned"  # 86090 - Scanned but not confirmed
     CONFIRMED = "confirmed"  # 0 - Login successful
     EXPIRED = "expired"  # 86038 - QR code expired
+    ERROR = "error"  # Other errors
 
 
 @dataclass
