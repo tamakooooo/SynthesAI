@@ -1,6 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
-import DashboardPage from './pages/DashboardPage';
 import LinkPage from './pages/LinkPage';
 import VocabularyPage from './pages/VocabularyPage';
 import VideoPage from './pages/VideoPage';
@@ -12,8 +11,7 @@ function App() {
   return (
     <MainLayout>
       <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/" element={<LinkPage />} />
         <Route path="/link" element={<LinkPage />} />
         <Route path="/vocabulary" element={<VocabularyPage />} />
         <Route path="/video" element={<VideoPage />} />

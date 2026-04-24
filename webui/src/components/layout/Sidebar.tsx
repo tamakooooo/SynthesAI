@@ -7,7 +7,6 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { path: '/', label: '学习看板', icon: '🏠' },
   { path: '/link', label: '知识卡片', icon: '📚' },
   { path: '/vocabulary', label: '词汇学习', icon: '📝' },
   { path: '/video', label: '视频总结', icon: '🎬' },
