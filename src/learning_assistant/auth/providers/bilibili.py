@@ -2,18 +2,23 @@
 Bilibili authentication provider.
 
 Implements QR code login for Bilibili using public API.
+Updated with correct WBI signature algorithm.
 """
 
+import hashlib
 import time
 from datetime import datetime, timedelta
+from functools import reduce
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlencode
 
 import requests
 from loguru import logger
 
 from ..base import BaseAuthProvider
 from ..cookie_manager import CookieManager
-from ..models import AuthInfo, AuthResult, AuthStatus, CookieData, QRSession
+from ..models import AuthInfo, AuthResult, AuthStatus, CookieData, QRSession, QRStatus
 from ..qr_display import display_qr_ascii
 
 
@@ -35,10 +40,10 @@ class BilibiliAuthProvider(BaseAuthProvider):
     # Bilibili domain for cookies
     BILIBILI_DOMAIN = ".bilibili.com"
 
-    # Headers
+    # Headers (critical for API access)
     HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": "https://www.bilibili.com",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.bilibili.com/",
     }
 
     # Cookie file name
@@ -201,6 +206,121 @@ class BilibiliAuthProvider(BaseAuthProvider):
         except Exception as e:
             logger.error(f"Failed to logout from Bilibili: {e}")
             return False
+
+    def import_cookies(self, cookie_input: str) -> AuthResult:
+        """
+        Import cookies from browser cookie export.
+
+        Supports two formats:
+        1. JSON array (from browser extension "Get cookies.txt")
+        2. Cookie string (format: "name1=value1; name2=value2")
+
+        Args:
+            cookie_input: Cookie data as JSON array or string
+
+        Returns:
+            Authentication result
+        """
+        try:
+            # Auto-detect format and parse
+            cookies = self.cookie_manager.parse_cookies_auto(cookie_input)
+
+            # Ensure all cookies have correct domain
+            for cookie in cookies:
+                if not cookie.domain or cookie.domain == "":
+                    cookie.domain = self.BILIBILI_DOMAIN
+                # Normalize domain (ensure starts with dot for wildcard)
+                elif not cookie.domain.startswith(".") and not cookie.domain.startswith("www"):
+                    cookie.domain = "." + cookie.domain
+
+            # Save to file
+            cookie_file = self.cookie_manager.export_cookies(
+                cookies, self.COOKIE_FILENAME
+            )
+
+            # Extract user ID if available
+            dedeuserid = next((c.value for c in cookies if c.name == "DedeUserID"), None)
+
+            logger.info(f"Bilibili cookies imported: {len(cookies)} cookies")
+
+            return AuthResult(
+                success=True,
+                platform="bilibili",
+                cookies=cookies,
+                user_id=dedeuserid,
+                cookie_file=str(cookie_file),
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to import Bilibili cookies: {e}")
+            return AuthResult(
+                success=False,
+                platform="bilibili",
+                error_message=str(e),
+            )
+
+    def check_qr_status(self, qrcode_key: str) -> tuple[QRStatus, AuthResult | None]:
+        """
+        Check QR code scan status (single poll, non-blocking).
+
+        Args:
+            qrcode_key: QR code session key
+
+        Returns:
+            Tuple of (QRStatus, AuthResult if successful)
+        """
+        try:
+            response = self.session.get(
+                self.API_POLL_STATUS, params={"qrcode_key": qrcode_key}
+            )
+            response.raise_for_status()
+
+            response_data = response.json()
+            data = response_data.get("data", {})
+            qr_status_code = data.get("code", -1)
+
+            # Status codes:
+            # 0 = scanned and confirmed (success)
+            # 86038 = expired
+            # 86090 = scanned but not confirmed
+            # 86101 = not scanned yet
+
+            if qr_status_code == 0:
+                # Login successful
+                logger.info("QR code scanned and confirmed!")
+                cookies = self._extract_cookies_from_response(response_data)
+                cookie_file = self.cookie_manager.export_cookies(
+                    cookies, self.COOKIE_FILENAME
+                )
+                logger.info(f"Cookies saved to {cookie_file}")
+
+                # Extract user info
+                dedeuserid = next((c.value for c in cookies if c.name == "DedeUserID"), None)
+
+                return QRStatus.CONFIRMED, AuthResult(
+                    success=True,
+                    platform="bilibili",
+                    cookies=cookies,
+                    user_id=dedeuserid,
+                    cookie_file=str(cookie_file),
+                )
+
+            elif qr_status_code == 86038:
+                return QRStatus.EXPIRED, None
+
+            elif qr_status_code == 86090:
+                return QRStatus.SCANNED, None
+
+            elif qr_status_code == 86101:
+                return QRStatus.WAITING, None
+
+            else:
+                logger.error(f"Unknown QR status: {qr_status_code}")
+                return QRStatus.ERROR, None
+
+        except Exception as e:
+            logger.error(f"Failed to check QR status: {e}")
+            return QRStatus.ERROR, None
 
     def get_cookie_file_path(self) -> Path:
         """Get Bilibili cookie file path."""

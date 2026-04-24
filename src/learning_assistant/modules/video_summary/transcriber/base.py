@@ -5,15 +5,16 @@ This module provides the base class for ASR (Automatic Speech Recognition) imple
 """
 
 import os
+import subprocess
 import threading
 import zlib
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from loguru import logger
-from pydub import AudioSegment  # type: ignore[import-untyped]
 
 from learning_assistant.core.history_manager import HistoryManager
 
@@ -112,7 +113,7 @@ class BaseASR:
 
     def _get_audio_duration(self) -> float:
         """
-        Get audio duration in seconds using pydub.
+        Get audio duration in seconds using ffprobe.
 
         Returns:
             Audio duration in seconds
@@ -121,15 +122,40 @@ class BaseASR:
             return 0.01
 
         try:
-            audio = AudioSegment.from_file(BytesIO(self.file_binary))
-            duration: float = audio.duration_seconds
-            return duration
+            # Write audio data to temporary file for ffprobe
+            with NamedTemporaryFile(suffix=".mp3", delete=True) as tmp_file:
+                tmp_file.write(self.file_binary)
+                tmp_file.flush()
+
+                # Use ffprobe to get duration
+                result = subprocess.run(
+                    [
+                        "ffprobe",
+                        "-v", "quiet",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        tmp_file.name,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+
+                if result.returncode == 0 and result.stdout.strip():
+                    duration = float(result.stdout.strip())
+                    return duration
+                else:
+                    logger.warning(f"ffprobe failed: {result.stderr}")
+                    # Fallback: estimate based on file size
+                    estimated_duration = len(self.file_binary) / (16 * 1024)
+                    return max(estimated_duration, 60.0)
+
         except Exception as e:
             logger.warning(f"Failed to get audio duration: {e}")
             # Fallback: estimate based on file size (rough approximation)
             # MP3 at 128kbps ≈ 16KB per second
             estimated_duration = len(self.file_binary) / (16 * 1024)
-            return max(estimated_duration, 60.0 * 10)  # At least 10 minutes
+            return max(estimated_duration, 60.0)
 
     def run(
         self,

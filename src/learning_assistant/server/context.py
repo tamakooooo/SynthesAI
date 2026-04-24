@@ -74,8 +74,8 @@ class ServerContext:
 
         # Load and initialize plugins
         modules_config = cls.config_manager.modules_model.model_dump()
-        for plugin_info in cls.plugin_manager.plugins:
-            cls.plugin_manager.load_plugin(plugin_info.name)
+        for plugin_name in cls.plugin_manager.plugins.keys():
+            cls.plugin_manager.load_plugin(plugin_name)
         cls.plugin_manager.initialize_all(modules_config, cls.event_bus)
         logger.info(f"Plugins initialized: {len(cls.plugin_manager.plugins)}")
 
@@ -102,6 +102,23 @@ class ServerContext:
         if cls.shared_api is None:
             raise RuntimeError("AgentAPI not available")
         return cls.shared_api
+
+    @classmethod
+    def get_config_manager(cls) -> ConfigManager:
+        """
+        Get shared ConfigManager instance.
+
+        Raises:
+            RuntimeError: If context not initialized
+
+        Returns:
+            Shared ConfigManager instance
+        """
+        if not cls._initialized:
+            raise RuntimeError("ServerContext not initialized")
+        if cls.config_manager is None:
+            raise RuntimeError("ConfigManager not available")
+        return cls.config_manager
 
     @classmethod
     def is_initialized(cls) -> bool:

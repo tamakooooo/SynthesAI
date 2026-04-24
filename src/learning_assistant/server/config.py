@@ -85,3 +85,20 @@ def get_api_key(config: ServerConfig) -> str | None:
         API key or None if not set
     """
     return os.environ.get(config.auth.api_key_env)
+
+
+# Singleton config instance
+_config: ServerConfig | None = None
+
+
+def get_server_config() -> ServerConfig:
+    """
+    Get server configuration singleton.
+
+    Returns:
+        ServerConfig instance
+    """
+    global _config
+    if _config is None:
+        _config = load_server_config()
+    return _config

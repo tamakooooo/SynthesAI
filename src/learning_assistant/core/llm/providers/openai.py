@@ -141,12 +141,37 @@ class OpenAIProvider(BaseLLMProvider):
 
     def get_available_models(self) -> list[str]:
         """
-        Get available OpenAI models.
+        Get available OpenAI models from API.
 
         Returns:
-            List of model names
+            List of model names from API
         """
-        return list(self.PRICING.keys())
+        logger.info(f"Fetching available models from API (base_url: {self.kwargs.get('base_url', 'default')})")
+
+        try:
+            # Call OpenAI API to list models
+            models_response = self.client.models.list()
+
+            # Extract model IDs
+            models = [model.id for model in models_response.data]
+
+            # Filter to chat models only (exclude embedding, audio, etc.)
+            chat_models = [
+                m for m in models
+                if any(keyword in m.lower() for keyword in ['gpt', 'chat', 'kimi', 'claude', 'deepseek', 'llama', 'qwen'])
+                or not any(keyword in m.lower() for keyword in ['embed', 'whisper', 'tts', 'davinci', 'babbage'])
+            ]
+
+            # Sort alphabetically
+            chat_models.sort()
+
+            logger.info(f"Found {len(chat_models)} chat models: {chat_models[:10]}...")
+            return chat_models
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch models from API: {e}, falling back to static list")
+            # Fallback to static list if API call fails
+            return list(self.PRICING.keys())
 
     def estimate_cost(self, usage: dict[str, int]) -> float:
         """

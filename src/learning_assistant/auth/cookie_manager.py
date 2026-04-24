@@ -2,9 +2,10 @@
 Cookie file management for authentication.
 
 Handles importing, exporting, and validating cookies in Netscape format
-(compatible with yt-dlp).
+(compatible with yt-dlp) and JSON format (browser extension export).
 """
 
+import json
 from pathlib import Path
 
 from loguru import logger
@@ -212,6 +213,99 @@ class CookieManager:
 
         logger.info(f"Validated {len(cookies)} cookies from string")
         return cookies
+
+    def validate_json_cookies(self, json_string: str) -> list[CookieData]:
+        """
+        Validate and parse JSON cookie export from browser extension.
+
+        Input format: JSON array of cookie objects (from "Get cookies.txt" extension)
+        Example: [{"name": "SESSDATA", "value": "xxx", "domain": ".bilibili.com", ...}]
+
+        Args:
+            json_string: JSON string of cookie array
+
+        Returns:
+            List of cookie data
+
+        Raises:
+            ValueError: If JSON is invalid or no valid cookies found
+        """
+        if not json_string or not json_string.strip():
+            raise ValueError("JSON cookie string is empty")
+
+        try:
+            cookie_list = json.loads(json_string)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON: {e}")
+
+        if not isinstance(cookie_list, list):
+            raise ValueError("JSON must be an array of cookie objects")
+
+        cookies = []
+
+        for cookie_obj in cookie_list:
+            if not isinstance(cookie_obj, dict):
+                logger.warning(f"Invalid cookie object: {cookie_obj}")
+                continue
+
+            name = cookie_obj.get("name")
+            value = cookie_obj.get("value")
+
+            if not name or not value:
+                logger.warning(f"Cookie missing name or value: {cookie_obj}")
+                continue
+
+            # Extract domain (may be ".bilibili.com" or "bilibili.com")
+            domain = cookie_obj.get("domain", "")
+
+            # Extract other fields
+            path = cookie_obj.get("path", "/")
+            secure = cookie_obj.get("secure", False)
+
+            # Handle expiration
+            expires = None
+            if cookie_obj.get("expirationDate"):
+                # expirationDate is Unix timestamp (can be float)
+                expires = int(cookie_obj["expirationDate"])
+
+            cookie = CookieData(
+                name=name,
+                value=value,
+                domain=domain,
+                path=path,
+                secure=secure,
+                expires=expires,
+            )
+
+            cookies.append(cookie)
+
+        if not cookies:
+            raise ValueError("No valid cookies found in JSON")
+
+        logger.info(f"Validated {len(cookies)} cookies from JSON")
+        return cookies
+
+    def parse_cookies_auto(self, input_string: str) -> list[CookieData]:
+        """
+        Auto-detect and parse cookies from either JSON or string format.
+
+        Args:
+            input_string: Cookie input (JSON array or "name=value; ..." string)
+
+        Returns:
+            List of cookie data
+        """
+        input_string = input_string.strip()
+
+        # Try JSON first (starts with '[')
+        if input_string.startswith("["):
+            try:
+                return self.validate_json_cookies(input_string)
+            except ValueError as e:
+                logger.warning(f"JSON parse failed, trying string format: {e}")
+
+        # Fall back to string format
+        return self.validate_cookie_string(input_string)
 
     def get_cookie_file_path(self, filename: str) -> Path:
         """
