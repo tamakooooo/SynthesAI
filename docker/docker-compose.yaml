@@ -1,0 +1,50 @@
+# SynthesAI Server Docker Compose
+# For production deployment
+
+version: '3.8'
+
+services:
+  # API Server
+  synthesai-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SYNTHESAI_API_KEY=${SYNTHESAI_API_KEY}
+      - SYNTHESAI_CONFIG_DIR=/app/config
+    volumes:
+      - ../config:/app/config:ro
+      - ../data:/app/data
+      - ../cache:/app/cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # WebUI (React + Vite + nginx)
+  synthesai-webui:
+    build:
+      context: ../webui
+      dockerfile: Dockerfile.webui
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://synthesai-api:8000
+    depends_on:
+      - synthesai-api
+    restart: unless-stopped
+
+  # Optional: Redis for distributed task queue
+  # redis:
+  #   image: redis:alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
