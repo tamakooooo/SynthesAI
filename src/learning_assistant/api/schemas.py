@@ -103,6 +103,15 @@ class LearningStatistics(BaseModel):
         recent_activity: 最近活动记录
     """
 
+    total_videos: int = Field(default=0, description="总视频数")
+    total_duration: int = Field(default=0, description="总学习时长（秒）")
+    most_watched_platform: str | None = Field(
+        default=None, description="最常观看的平台"
+    )
+    recent_activity: list[dict[str, Any]] = Field(
+        default_factory=list, description="最近活动记录"
+    )
+
 
 class LinkSummaryResult(BaseModel):
     """
@@ -252,8 +261,3 @@ class VocabularyResult(BaseModel):
         examples=[{"markdown_path": "./outputs/vocabulary.md"}],
     )
     timestamp: str = Field(description="ISO 8601 格式时间戳")
-
-    total_videos: int = Field(description="总视频数")
-    total_duration: int = Field(description="总学习时长（秒）")
-    most_watched_platform: str | None = Field(description="最常观看的平台")
-    recent_activity: list[dict[str, Any]] = Field(description="最近活动记录")

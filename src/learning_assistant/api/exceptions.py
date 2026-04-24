@@ -30,7 +30,9 @@ class LearningAssistantError(Exception):
     所有 Learning Assistant 异常的基类。
     """
 
-    pass
+    def to_http_status(self) -> int:
+        """Return corresponding HTTP status code for this exception."""
+        return 500
 
 
 class SkillNotFoundError(LearningAssistantError):
@@ -45,7 +47,9 @@ class SkillNotFoundError(LearningAssistantError):
         SkillNotFoundError: Skill 'non-existent-skill' not found
     """
 
-    pass
+    def to_http_status(self) -> int:
+        """Return HTTP 404 Not Found."""
+        return 404
 
 
 class VideoNotFoundError(LearningAssistantError):
@@ -65,7 +69,9 @@ class VideoNotFoundError(LearningAssistantError):
         VideoNotFoundError: Video not found at https://invalid-url
     """
 
-    pass
+    def to_http_status(self) -> int:
+        """Return HTTP 404 Not Found."""
+        return 404
 
 
 class VideoDownloadError(LearningAssistantError):
@@ -90,7 +96,9 @@ class VideoDownloadError(LearningAssistantError):
         ... )
     """
 
-    pass
+    def to_http_status(self) -> int:
+        """Return HTTP 502 Bad Gateway."""
+        return 502
 
 
 class TranscriptionError(LearningAssistantError):
@@ -114,7 +122,9 @@ class TranscriptionError(LearningAssistantError):
         - 选择音频清晰的视频
     """
 
-    pass
+    def to_http_status(self) -> int:
+        """Return HTTP 503 Service Unavailable."""
+        return 503
 
 
 class LLMAPIError(LearningAssistantError):
@@ -139,7 +149,9 @@ class LLMAPIError(LearningAssistantError):
         - 使用其他 LLM 提供商
     """
 
-    pass
+    def to_http_status(self) -> int:
+        """Return HTTP 502 Bad Gateway."""
+        return 502
 
 
 class ConfigError(LearningAssistantError):
@@ -149,7 +161,9 @@ class ConfigError(LearningAssistantError):
     当配置文件格式错误或必需配置缺失时抛出。
     """
 
-    pass
+    def to_http_status(self) -> int:
+        """Return HTTP 500 Internal Server Error."""
+        return 500
 
 
 class HistoryError(LearningAssistantError):
@@ -159,4 +173,6 @@ class HistoryError(LearningAssistantError):
     当读取或写入历史记录时出现错误时抛出。
     """
 
-    pass
+    def to_http_status(self) -> int:
+        """Return HTTP 500 Internal Server Error."""
+        return 500

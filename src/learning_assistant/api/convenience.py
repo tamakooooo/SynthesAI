@@ -38,6 +38,45 @@ from learning_assistant.api.schemas import (
     VocabularyResult,
 )
 
+# Shared instance for server usage (lazy loaded)
+_shared_api_instance: AgentAPI | None = None
+
+
+def get_shared_api() -> AgentAPI:
+    """
+    Get or create a shared AgentAPI instance.
+
+    Used by server routes to avoid repeated initialization.
+    The instance is created once and reused for all requests.
+
+    Returns:
+        Shared AgentAPI instance
+
+    Example:
+        >>> api = get_shared_api()
+        >>> result = await api.summarize_video(url="https://...")
+    """
+    global _shared_api_instance
+    if _shared_api_instance is None:
+        logger.info("Creating shared AgentAPI instance")
+        _shared_api_instance = AgentAPI()
+    return _shared_api_instance
+
+
+def reset_shared_api() -> None:
+    """
+    Reset the shared AgentAPI instance.
+
+    Used for testing or when config changes require re-initialization.
+
+    Example:
+        >>> reset_shared_api()  # Clear instance
+        >>> api = get_shared_api()  # Will create new instance
+    """
+    global _shared_api_instance
+    _shared_api_instance = None
+    logger.debug("Reset shared AgentAPI instance")
+
 
 async def summarize_video(url: str, **options: Any) -> dict[str, Any]:
     """

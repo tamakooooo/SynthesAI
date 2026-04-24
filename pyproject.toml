@@ -77,6 +77,12 @@ link = [
     "readability-lxml>=0.8.1",
 ]
 
+server = [
+    # HTTP Server dependencies
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+]
+
 [project.scripts]
 synthesai = "learning_assistant.cli:app"
 sai = "learning_assistant.cli:app"

@@ -25,6 +25,8 @@ from learning_assistant.api.convenience import (
     process_link_sync,
     extract_vocabulary,
     extract_vocabulary_sync,
+    get_shared_api,
+    reset_shared_api,
 )
 
 __all__ = [
@@ -37,4 +39,6 @@ __all__ = [
     "process_link_sync",
     "extract_vocabulary",
     "extract_vocabulary_sync",
+    "get_shared_api",
+    "reset_shared_api",
 ]

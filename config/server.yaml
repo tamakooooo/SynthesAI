@@ -1,0 +1,26 @@
+# SynthesAI Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+  # Authentication
+  auth:
+    enabled: true
+    api_key_env: "SYNTHESAI_API_KEY"
+    whitelist_paths:
+      - "/health"
+      - "/ready"
+      - "/docs"
+      - "/openapi.json"
+      - "/redoc"
+
+  # Task Queue (for video processing)
+  task_queue:
+    max_concurrent: 3
+    max_queue_size: 100
+    result_ttl: 3600  # 1 hour
+
+  # Timeout settings
+  timeouts:
+    sync_request: 120  # seconds
+    task_polling: 10   # seconds
