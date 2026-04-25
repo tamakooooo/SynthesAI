@@ -9,7 +9,7 @@ description: |
   - Mentions "视频总结", "总结视频", "视频笔记"
   - Requests video learning notes or transcripts
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   author: Learning Assistant Team
 ---
 
@@ -17,56 +17,59 @@ metadata:
 
 Summarizes video content from URLs and generates structured learning notes with transcripts.
 
-## Supported Platforms
+## HTTP API Usage (For Agents)
 
-- B站
-- YouTube
-- 抖音
+**Server Base URL**: `http://localhost:8000` (or your configured server address)
 
-## Inputs
+### Step 1: Submit Video Task
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| url | string | ✅ | - | Video URL (B站/YouTube/抖音) |
-| format | string | ❌ | markdown | Output format (markdown/pdf) |
-| language | string | ❌ | zh | Summary language (zh/en) |
-| output_dir | string | ❌ | ./outputs | Output directory |
-| cookie_file | string | ❌ | - | Cookie file path (for login-required videos) |
-| word_timestamps | boolean | ❌ | false | Enable word-level timestamps |
+Video processing takes 3-10 minutes, so use async task queue:
 
-## Quick Start
+```http
+POST /api/v1/video/submit
+Content-Type: application/json
 
-### Python API (Recommended)
-
-```python
-from learning_assistant.api import summarize_video
-
-# Basic usage
-result = await summarize_video(
-    url="https://www.bilibili.com/video/BV..."
-)
-
-# With options
-result = await summarize_video(
-    url="https://www.youtube.com/watch?v=...",
-    format="pdf",
-    language="en",
-    output_dir="./my-notes"
-)
+{
+  "url": "https://www.bilibili.com/video/BV...",
+  "format": "markdown",
+  "language": "zh"
+}
 ```
 
-### Synchronous Version
-
-```python
-from learning_assistant.api import summarize_video_sync
-
-result = summarize_video_sync(url="https://...")
+**Response**:
+```json
+{
+  "task_id": "video_abc123",
+  "status": "pending",
+  "message": "Task submitted successfully"
+}
 ```
 
-## Output Format
+### Step 2: Check Progress
 
-Returns JSON object:
+```http
+GET /api/v1/video/{task_id}/status
+```
 
+**Response**:
+```json
+{
+  "task_id": "video_abc123",
+  "status": "running",
+  "progress": 45.5,
+  "message": "Transcribing audio..."
+}
+```
+
+**Status values**: `pending` → `running` → `completed` / `failed` / `cancelled`
+
+### Step 3: Get Result
+
+```http
+GET /api/v1/video/{task_id}/result
+```
+
+**Response** (when completed):
 ```json
 {
   "status": "success",
@@ -81,74 +84,55 @@ Returns JSON object:
   "files": {
     "summary_path": "./outputs/summary.md",
     "subtitle_path": "./outputs/subtitle.srt"
-  },
-  "metadata": {
-    "duration": 900,
-    "platform": "bilibili"
   }
 }
 ```
 
-## Execution Steps
+### Request Parameters
 
-1. **Download video** (yt-dlp) - Extract metadata and video file
-2. **Extract audio** (FFmpeg) - Separate audio track, convert to MP3
-3. **Transcribe** (BcutASR) - Upload audio, wait for transcription, download result
-4. **Generate summary** (LLM) - Use prompt template, call LLM API, parse JSON
-5. **Export output** - Render Markdown template, generate SRT subtitle file
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| url | string | ✅ | - | Video URL (B站/YouTube/抖音) |
+| format | string | ❌ | markdown | Output format (markdown/pdf/both) |
+| language | string | ❌ | zh | Summary language (zh/en) |
+| output_dir | string | ❌ | ./outputs | Output directory |
+| cookie_file | string | ❌ | - | Cookie file for login-required videos |
+
+## Supported Platforms
+
+- B站
+- YouTube
+- 抖音
+
+## Execution Flow
+
+1. Submit task → get `task_id`
+2. Poll status every 30-60 seconds until `status: completed`
+3. Fetch result when completed
 
 ## Performance
 
-| Duration | Download | Audio | Transcribe | Summary | Total |
-|----------|----------|-------|------------|---------|-------|
-| 5 min    | 30s      | 15s   | 2 min      | 20s     | ~3 min |
-| 10 min   | 45s      | 20s   | 3 min      | 30s     | ~4 min |
-| 30 min   | 1 min    | 30s   | 6 min      | 45s     | ~8 min |
+| Duration | Total Time |
+|----------|------------|
+| 5 min    | ~3 min |
+| 10 min   | ~4 min |
+| 30 min   | ~8 min |
 
 ## Error Handling
 
+- `404 TaskNotFound`: Task ID invalid or expired
+- `400 TaskNotComplete`: Task still running, wait and retry
+- `503 QueueFull`: Server busy, retry later
+
+## Python API (Alternative)
+
 ```python
 from learning_assistant.api import summarize_video
-from learning_assistant.api.exceptions import (
-    VideoNotFoundError,
-    VideoDownloadError,
-    TranscriptionError,
-    LLMAPIError,
-)
 
-try:
-    result = await summarize_video(url="https://...")
-except VideoNotFoundError:
-    print("Video not found, check URL")
-except VideoDownloadError:
-    print("Download failed, may need cookie")
-except TranscriptionError:
-    print("Transcription failed, retry later")
-except LLMAPIError:
-    print("LLM error, check API key")
+result = await summarize_video(url="https://www.bilibili.com/video/BV...")
 ```
-
-## Detailed Documentation
-
-For more details, see:
-- [API Guide](references/api-guide.md) - Complete API reference
-- [Error Handling](references/error-handling.md) - Detailed error scenarios
-- [Examples](references/examples.md) - More usage examples
-
-## Best Practices
-
-1. **Video Selection**: Choose clear audio, 5-30 minutes duration
-2. **Cookie Config**: Use cookie file for login-required videos
-3. **Error Handling**: Always catch exceptions
-4. **Performance**: Batch process with rate limiting
 
 ## Related Skills
 
-- [list-skills](../list-skills/SKILL.md) - List available skills
-- [learning-history](../learning-history/SKILL.md) - View learning history
-
----
-
-**Need help?**
-- GitHub Issues: [learning-assistant/issues](https://github.com/yourname/learning-assistant/issues)
-- Docs: [learning-assistant.readthedocs.io](https://learning-assistant.readthedocs.io)
+- [link-learning](../link-learning/SKILL.md) - Web article knowledge extraction
+- [vocabulary](../vocabulary/SKILL.md) - Vocabulary extraction

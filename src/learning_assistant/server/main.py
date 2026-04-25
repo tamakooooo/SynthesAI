@@ -43,6 +43,9 @@ async def lifespan(app: FastAPI):
     """
     config = get_server_config()
 
+    # Reset context for reload support
+    ServerContext.reset()
+
     # Startup
     logger.info("Starting SynthesAI Server...")
     ServerContext.initialize()

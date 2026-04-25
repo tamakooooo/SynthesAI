@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   checkFeishuConfiguration,
+  fetchAvailableModels,
   FeishuConfiguration,
   FeishuCheckResult,
   ModuleConfiguration,
@@ -24,7 +25,9 @@ const ConfigPage: React.FC = () => {
   const [defaultProvider, setDefaultProvider] = useState('');
   const [feishuConfig, setFeishuConfig] = useState<FeishuConfiguration>({
     enabled: false,
+    app_id: null,
     app_id_env: 'FEISHU_APP_ID',
+    app_secret: null,
     app_secret_env: 'FEISHU_APP_SECRET',
     space_id: '',
     root_node_token: '',
@@ -49,6 +52,7 @@ const ConfigPage: React.FC = () => {
   const [testing, setTesting] = useState(false);
   const [checkingFeishu, setCheckingFeishu] = useState(false);
   const [publishingFeishuTest, setPublishingFeishuTest] = useState(false);
+  const [fetchingModelsFor, setFetchingModelsFor] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [feishuCheck, setFeishuCheck] = useState<FeishuCheckResult | null>(null);
 
@@ -184,6 +188,26 @@ const ConfigPage: React.FC = () => {
     setModules((current) => current.map((module) => (module.name === name ? updater(module) : module)));
   }
 
+  async function handleFetchProviderModels(providerName: string) {
+    const provider = providers.find((p) => p.name === providerName);
+    if (!provider) return;
+
+    setFetchingModelsFor(providerName);
+    setMessage(null);
+    try {
+      const models = await fetchAvailableModels(providerName, provider.api_key);
+      updateProvider(providerName, (current) => ({
+        ...current,
+        models,
+      }));
+      setMessage(`${providerName} 模型列表已更新，请记得保存配置文件`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `${providerName} 模型列表获取失败`);
+    } finally {
+      setFetchingModelsFor(null);
+    }
+  }
+
   return (
     <div className="space-y-lg">
       <section className="card">
@@ -195,6 +219,130 @@ const ConfigPage: React.FC = () => {
         {message && (
           <div className="mt-md rounded-md border border-border bg-neutral-warm px-md py-sm text-sm text-primary">
             {message}
+          </div>
+        )}
+      </section>
+
+      
+      <section className="card">
+        <div className="flex items-start justify-between gap-md">
+          <div>
+            <h2 className="text-xl font-semibold text-primary">LLM 配置（模型 / API Key / Base URL）</h2>
+            <p className="mt-xs text-sm text-secondary">
+              所有 Agent 相关模型配置集中维护在同一个文件，避免前端继续承担业务执行入口。
+            </p>
+          </div>
+          <button className="btn-primary" onClick={() => void handleSaveConfiguration()} disabled={saving || loading}>
+            {saving ? '保存中...' : '保存配置文件'}
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="mt-md text-secondary">正在加载配置...</div>
+        ) : (
+          <div className="mt-lg space-y-lg">
+            <div>
+              <label className="mb-xs block text-sm font-medium text-primary">默认 Provider</label>
+              <select
+                className="input w-full"
+                value={defaultProvider}
+                onChange={(event) => setDefaultProvider(event.target.value)}
+              >
+                {providers.map((provider) => (
+                  <option key={provider.name} value={provider.name}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {providers.map((provider) => (
+              <section key={provider.name} className="rounded-lg border border-border p-lg">
+                <div className="mb-md flex items-center justify-between gap-md">
+                  <div>
+                    <h3 className="text-lg font-semibold text-primary">{provider.name}</h3>
+                    <p className="mt-xs text-sm text-secondary">
+                      该 Provider 的配置会写入 `settings.local.yaml`。
+                    </p>
+                  </div>
+                  <button
+                    className="btn-secondary"
+                    onClick={() => void handleFetchProviderModels(provider.name)}
+                    disabled={fetchingModelsFor === provider.name}
+                    type="button"
+                  >
+                    {fetchingModelsFor === provider.name ? '获取中...' : '获取模型'}
+                  </button>
+                </div>
+
+                <div className="grid gap-md lg:grid-cols-2">
+                  <div>
+                    <label className="mb-xs block text-sm font-medium text-primary">API Key</label>
+                    <input
+                      className="input w-full"
+                      value={provider.api_key || ''}
+                      onChange={(event) =>
+                        updateProvider(provider.name, (current) => ({
+                          ...current,
+                          api_key: event.target.value || null,
+                        }))
+                      }
+                      placeholder="仅保存在本地配置文件"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-xs block text-sm font-medium text-primary">默认模型</label>
+                    <select
+                      className="input w-full"
+                      value={provider.default_model}
+                      onChange={(event) =>
+                        updateProvider(provider.name, (current) => ({
+                          ...current,
+                          default_model: event.target.value,
+                        }))
+                      }
+                    >
+                      {provider.models.length === 0 ? (
+                        <option value={provider.default_model}>
+                          {provider.default_model || '请先填写或获取模型列表'}
+                        </option>
+                      ) : (
+                        provider.models.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-xs block text-sm font-medium text-primary">Base URL</label>
+                    <input
+                      className="input w-full"
+                      value={provider.base_url || ''}
+                      onChange={(event) =>
+                        updateProvider(provider.name, (current) => ({
+                          ...current,
+                          base_url: event.target.value || null,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-md">
+                  <label className="mb-xs block text-sm font-medium text-primary">模型列表</label>
+                  <textarea
+                    className="input min-h-32 w-full"
+                    value={provider.models.join('\n')}
+                    onChange={(event) => handleModelsChange(provider.name, event.target.value)}
+                    placeholder="每行一个模型名"
+                  />
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </section>
@@ -274,16 +422,6 @@ const ConfigPage: React.FC = () => {
               value={serverConfig.port}
               onChange={(event) =>
                 setServerConfig((current) => ({ ...current, port: Number(event.target.value) }))
-              }
-            />
-          </div>
-          <div>
-            <label className="mb-xs block text-sm font-medium text-primary">API Key 环境变量</label>
-            <input
-              className="input w-full"
-              value={serverConfig.api_key_env}
-              onChange={(event) =>
-                setServerConfig((current) => ({ ...current, api_key_env: event.target.value }))
               }
             />
           </div>
@@ -421,24 +559,28 @@ const ConfigPage: React.FC = () => {
 
           <div className="grid gap-md lg:grid-cols-2">
             <div>
-              <label className="mb-xs block text-sm font-medium text-primary">App ID 环境变量</label>
+              <label className="mb-xs block text-sm font-medium text-primary">App ID</label>
               <input
                 className="input w-full"
-                value={feishuConfig.app_id_env}
+                type="password"
+                value={feishuConfig.app_id || ''}
                 onChange={(event) =>
-                  setFeishuConfig((current) => ({ ...current, app_id_env: event.target.value }))
+                  setFeishuConfig((current) => ({ ...current, app_id: event.target.value || null }))
                 }
+                placeholder="cli_xxxxxxxxx"
               />
             </div>
 
             <div>
-              <label className="mb-xs block text-sm font-medium text-primary">App Secret 环境变量</label>
+              <label className="mb-xs block text-sm font-medium text-primary">App Secret</label>
               <input
                 className="input w-full"
-                value={feishuConfig.app_secret_env}
+                type="password"
+                value={feishuConfig.app_secret || ''}
                 onChange={(event) =>
-                  setFeishuConfig((current) => ({ ...current, app_secret_env: event.target.value }))
+                  setFeishuConfig((current) => ({ ...current, app_secret: event.target.value || null }))
                 }
+                placeholder="仅保存在本地配置文件"
               />
             </div>
 
@@ -551,122 +693,6 @@ const ConfigPage: React.FC = () => {
         </form>
       </section>
 
-      <section className="card">
-        <div className="flex items-start justify-between gap-md">
-          <div>
-            <h2 className="text-xl font-semibold text-primary">LLM 配置文件</h2>
-            <p className="mt-xs text-sm text-secondary">
-              所有 Agent 相关模型配置集中维护在同一个文件，避免前端继续承担业务执行入口。
-            </p>
-          </div>
-          <button className="btn-primary" onClick={() => void handleSaveConfiguration()} disabled={saving || loading}>
-            {saving ? '保存中...' : '保存配置文件'}
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="mt-md text-secondary">正在加载配置...</div>
-        ) : (
-          <div className="mt-lg space-y-lg">
-            <div>
-              <label className="mb-xs block text-sm font-medium text-primary">默认 Provider</label>
-              <select
-                className="input w-full"
-                value={defaultProvider}
-                onChange={(event) => setDefaultProvider(event.target.value)}
-              >
-                {providers.map((provider) => (
-                  <option key={provider.name} value={provider.name}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {providers.map((provider) => (
-              <section key={provider.name} className="rounded-lg border border-border p-lg">
-                <div className="mb-md flex items-center justify-between gap-md">
-                  <div>
-                    <h3 className="text-lg font-semibold text-primary">{provider.name}</h3>
-                    <p className="mt-xs text-sm text-secondary">
-                      该 Provider 的配置会写入 `settings.local.yaml`。
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-md lg:grid-cols-2">
-                  <div>
-                    <label className="mb-xs block text-sm font-medium text-primary">API Key</label>
-                    <input
-                      className="input w-full"
-                      value={provider.api_key || ''}
-                      onChange={(event) =>
-                        updateProvider(provider.name, (current) => ({
-                          ...current,
-                          api_key: event.target.value || null,
-                        }))
-                      }
-                      placeholder="仅保存在本地配置文件"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-xs block text-sm font-medium text-primary">API Key 环境变量</label>
-                    <input
-                      className="input w-full"
-                      value={provider.api_key_env}
-                      onChange={(event) =>
-                        updateProvider(provider.name, (current) => ({
-                          ...current,
-                          api_key_env: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-xs block text-sm font-medium text-primary">默认模型</label>
-                    <input
-                      className="input w-full"
-                      value={provider.default_model}
-                      onChange={(event) =>
-                        updateProvider(provider.name, (current) => ({
-                          ...current,
-                          default_model: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-xs block text-sm font-medium text-primary">Base URL</label>
-                    <input
-                      className="input w-full"
-                      value={provider.base_url || ''}
-                      onChange={(event) =>
-                        updateProvider(provider.name, (current) => ({
-                          ...current,
-                          base_url: event.target.value || null,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-md">
-                  <label className="mb-xs block text-sm font-medium text-primary">模型列表</label>
-                  <textarea
-                    className="input min-h-32 w-full"
-                    value={provider.models.join('\n')}
-                    onChange={(event) => handleModelsChange(provider.name, event.target.value)}
-                    placeholder="每行一个模型名"
-                  />
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 };

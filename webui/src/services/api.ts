@@ -226,7 +226,9 @@ export interface FrontendProviderConfig {
 
 export interface FeishuConfiguration {
   enabled: boolean;
+  app_id: string | null;
   app_id_env: string;
+  app_secret: string | null;
   app_secret_env: string;
   space_id: string;
   root_node_token: string;
@@ -320,8 +322,11 @@ export async function getProviderModels(provider: string): Promise<string[]> {
   return request(`/api/v1/llm/models/${provider}`);
 }
 
-export async function fetchAvailableModels(provider: string): Promise<string[]> {
-  return request(`/api/v1/llm/models/${provider}/available`);
+export async function fetchAvailableModels(provider: string, apiKey?: string): Promise<string[]> {
+  const params = new URLSearchParams();
+  if (apiKey) params.set('api_key', apiKey);
+  const query = params.toString() ? `?${params}` : '';
+  return request(`/api/v1/llm/models/${provider}/available${query}`);
 }
 
 export interface UpdateLLMConfigRequest {

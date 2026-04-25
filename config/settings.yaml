@@ -35,28 +35,6 @@ llm:
       # Max retries
       max_retries: 3
 
-    anthropic:
-      # api_key: "your-anthropic-api-key"  # Uncomment and set your key
-      api_key_env: "ANTHROPIC_API_KEY"
-      default_model: "claude-3-5-sonnet-20241022"
-      models:
-        - "claude-3-5-sonnet-20241022"
-        - "claude-3-opus-20240229"
-        - "claude-3-haiku-20240307"
-      timeout: 30
-      max_retries: 3
-
-    deepseek:
-      # api_key: "your-deepseek-api-key"  # Uncomment and set your key
-      api_key_env: "DEEPSEEK_API_KEY"
-      default_model: "deepseek-chat"
-      models:
-        - "deepseek-chat"
-        - "deepseek-coder"
-      base_url: "https://api.deepseek.com/v1"
-      timeout: 30
-      max_retries: 3
-
   # Cost tracking
   cost_tracking:
     enabled: true

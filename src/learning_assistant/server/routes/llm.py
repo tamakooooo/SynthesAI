@@ -168,12 +168,6 @@ async def update_llm_config(request: UpdateLLMConfigRequest):
                 llm_config["providers"][request.provider]["base_url"] = request.base_url
 
             if request.default_model:
-                # Validate model is in provider's list
-                models = llm_config["providers"][request.provider].get("models", [])
-                if request.default_model not in models:
-                    # Add to models list if not present
-                    models.append(request.default_model)
-                    llm_config["providers"][request.provider]["models"] = models
                 llm_config["providers"][request.provider]["default_model"] = request.default_model
 
         # Build response
@@ -275,12 +269,13 @@ async def test_llm_connection(
 
 
 @router.get("/models/{provider}/available")
-async def get_available_models_dynamic(provider: str):
+async def get_available_models_dynamic(provider: str, api_key: str | None = None):
     """
     Dynamically fetch available models from provider API.
 
     Args:
         provider: Provider name (openai, anthropic, deepseek)
+        api_key: API key from frontend (optional, overrides config)
 
     Returns:
         List of available models from API
@@ -292,8 +287,9 @@ async def get_available_models_dynamic(provider: str):
         llm_config = get_llm_config()
         provider_config = llm_config.get("providers", {}).get(provider, {})
 
-        # Get API key
-        api_key = provider_config.get("api_key")
+        # Get API key: frontend parameter > config > environment
+        if not api_key:
+            api_key = provider_config.get("api_key")
         if not api_key:
             api_key_env = provider_config.get("api_key_env", f"{provider.upper()}_API_KEY")
             api_key = os.environ.get(api_key_env)

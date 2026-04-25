@@ -2,6 +2,8 @@
 System endpoints - health check, readiness, etc.
 """
 
+from loguru import logger
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -82,7 +84,8 @@ async def check_feishu_configuration():
 
     plugin_manager = ServerContext.plugin_manager
     adapter = plugin_manager.get_plugin("feishu") if plugin_manager else None
-    adapter_loaded = isinstance(adapter, FeishuKnowledgeBaseAdapter)
+    # Use class name comparison instead of isinstance due to dynamic plugin loading
+    adapter_loaded = adapter is not None and type(adapter).__name__ == "FeishuKnowledgeBaseAdapter"
 
     message = "Feishu adapter ready for configuration validation"
     if not feishu_enabled:
@@ -117,16 +120,15 @@ async def verify_feishu_connection():
     if not response.enabled or not response.configured:
         return response
 
-    config = FeishuKnowledgeBaseConfig(
-        enabled=response.enabled,
-        app_id_env=response.config_summary.get("app_id_env", "FEISHU_APP_ID"),
-        app_secret_env=response.config_summary.get("app_secret_env", "FEISHU_APP_SECRET"),
-        space_id=response.config_summary.get("space_id", ""),
-        root_node_token=response.config_summary.get("root_node_token", ""),
-    )
+    # Use the adapter's actual settings (which includes app_id/app_secret)
+    plugin_manager = ServerContext.plugin_manager
+    adapter = plugin_manager.get_plugin("feishu") if plugin_manager else None
+    if not (adapter is not None and type(adapter).__name__ == "FeishuKnowledgeBaseAdapter"):
+        response.message = "Feishu adapter not loaded"
+        return response
 
     try:
-        client = FeishuWikiClient(config)
+        client = FeishuWikiClient(adapter.settings)
         verification = client.verify_configuration()
         response.token_verified = True
         response.space_accessible = bool(verification.get("space_accessible"))
@@ -149,7 +151,8 @@ async def publish_feishu_test_document():
 
     plugin_manager = ServerContext.plugin_manager
     adapter = plugin_manager.get_plugin("feishu") if plugin_manager else None
-    if not isinstance(adapter, FeishuKnowledgeBaseAdapter):
+    # Use class name comparison instead of isinstance due to dynamic plugin loading
+    if not (adapter is not None and type(adapter).__name__ == "FeishuKnowledgeBaseAdapter"):
         raise HTTPException(status_code=404, detail="Feishu adapter not loaded")
     if not adapter.settings.enabled:
         raise HTTPException(status_code=400, detail="Feishu adapter is disabled")

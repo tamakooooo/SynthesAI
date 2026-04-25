@@ -29,7 +29,9 @@ class FeishuConfigItem(BaseModel):
     """Frontend-editable Feishu knowledge base configuration."""
 
     enabled: bool = Field(default=False, description="Whether Feishu publishing is enabled")
+    app_id: str | None = Field(default=None, description="Feishu app id (direct value)")
     app_id_env: str = Field(default="FEISHU_APP_ID", description="Env var for Feishu app id")
+    app_secret: str | None = Field(default=None, description="Feishu app secret (direct value)")
     app_secret_env: str = Field(
         default="FEISHU_APP_SECRET",
         description="Env var for Feishu app secret",
@@ -159,6 +161,7 @@ def _build_frontend_config_response() -> FrontendConfigResponse:
     feishu_config = feishu_adapter.get("config", {})
     server_config = get_server_config()
     local_settings_file = _get_local_settings_file()
+    module_items = modules.model_dump().items()
 
     return FrontendConfigResponse(
         file_path=str(local_settings_file),
@@ -167,7 +170,9 @@ def _build_frontend_config_response() -> FrontendConfigResponse:
         providers=providers,
         feishu=FeishuConfigItem(
             enabled=feishu_adapter.get("enabled", False),
+            app_id=feishu_config.get("app_id"),
             app_id_env=feishu_config.get("app_id_env", "FEISHU_APP_ID"),
+            app_secret=feishu_config.get("app_secret"),
             app_secret_env=feishu_config.get("app_secret_env", "FEISHU_APP_SECRET"),
             space_id=feishu_config.get("space_id", ""),
             root_node_token=feishu_config.get("root_node_token", ""),
@@ -176,8 +181,12 @@ def _build_frontend_config_response() -> FrontendConfigResponse:
             overwrite_strategy=feishu_config.get("overwrite_strategy", "create_new"),
         ),
         modules=[
-            ModuleConfigItem(name=name, enabled=module.enabled, priority=module.priority)
-            for name, module in modules.model_dump().items()
+            ModuleConfigItem(
+                name=name,
+                enabled=bool(module.get("enabled", True)),
+                priority=int(module.get("priority", 99)),
+            )
+            for name, module in module_items
         ],
         server=ServerFrontendConfig(
             host=server_config.host,
@@ -247,21 +256,27 @@ async def save_frontend_configuration(request: SaveFrontendConfigRequest):
         local_settings["llm"]["providers"] = _merge_dict(existing_providers, updated_providers)
 
         existing_adapters = local_settings.get("adapters", {})
+        feishu_config_data: dict[str, object] = {
+            "app_id_env": request.feishu.app_id_env,
+            "app_secret_env": request.feishu.app_secret_env,
+            "space_id": request.feishu.space_id,
+            "root_node_token": request.feishu.root_node_token,
+            "publish_modules": request.feishu.publish_modules,
+            "title_template": request.feishu.title_template,
+            "overwrite_strategy": request.feishu.overwrite_strategy,
+        }
+        if request.feishu.app_id:
+            feishu_config_data["app_id"] = request.feishu.app_id
+        if request.feishu.app_secret:
+            feishu_config_data["app_secret"] = request.feishu.app_secret
+
         local_settings["adapters"] = _merge_dict(
             existing_adapters,
             {
                 "feishu": {
                 "enabled": request.feishu.enabled,
                 "priority": 1,
-                "config": {
-                    "app_id_env": request.feishu.app_id_env,
-                    "app_secret_env": request.feishu.app_secret_env,
-                    "space_id": request.feishu.space_id,
-                    "root_node_token": request.feishu.root_node_token,
-                    "publish_modules": request.feishu.publish_modules,
-                    "title_template": request.feishu.title_template,
-                    "overwrite_strategy": request.feishu.overwrite_strategy,
-                },
+                "config": feishu_config_data,
                 }
             },
         )

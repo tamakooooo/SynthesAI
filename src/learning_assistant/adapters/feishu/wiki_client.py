@@ -89,12 +89,13 @@ class FeishuWikiClient:
         return verification
 
     def _get_tenant_access_token(self) -> str:
-        app_id = os.environ.get(self.config.app_id_env)
-        app_secret = os.environ.get(self.config.app_secret_env)
+        # Priority: config value > environment variable
+        app_id = self.config.app_id or os.environ.get(self.config.app_id_env)
+        app_secret = self.config.app_secret or os.environ.get(self.config.app_secret_env)
         if not app_id or not app_secret:
             raise RuntimeError(
                 "Missing Feishu credentials. "
-                f"Set {self.config.app_id_env} and {self.config.app_secret_env}."
+                f"Set app_id/app_secret in config or set {self.config.app_id_env}/{self.config.app_secret_env} env vars."
             )
 
         response = requests.post(
