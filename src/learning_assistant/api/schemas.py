@@ -24,9 +24,21 @@ class VideoSummaryResult(BaseModel):
         timestamp: ISO 8601 格式时间戳
     """
 
-    status: str = Field(description="状态（success/error）")
+    status: str = Field(
+        description="状态（success/error）",
+        json_schema_extra={
+            "agent_hint": "首先检查此字段，success 时才处理其他字段",
+            "display_priority": "critical",
+        },
+    )
     url: str = Field(description="视频URL")
-    title: str = Field(description="视频标题")
+    title: str = Field(
+        description="视频标题",
+        json_schema_extra={
+            "agent_hint": "核心输出，推荐展示给用户",
+            "display_priority": "high",
+        },
+    )
     summary: dict[str, Any] = Field(
         description="总结内容",
         examples=[
@@ -36,8 +48,18 @@ class VideoSummaryResult(BaseModel):
                 "knowledge": ["知识点1", "知识点2"],
             }
         ],
+        json_schema_extra={
+            "agent_hint": "核心输出，包含 content、key_points、knowledge，推荐重点展示",
+            "display_priority": "high",
+        },
     )
-    transcript: str = Field(description="字幕文本")
+    transcript: str = Field(
+        description="字幕文本",
+        json_schema_extra={
+            "agent_hint": "可能很长，考虑分页展示或存储",
+            "display_priority": "low",
+        },
+    )
     files: dict[str, str | None] = Field(
         description="输出文件路径",
         examples=[
@@ -46,10 +68,18 @@ class VideoSummaryResult(BaseModel):
                 "subtitle_path": "./outputs/subtitle.srt",
             }
         ],
+        json_schema_extra={
+            "agent_hint": "导出文件路径，可用于文件下载或后续处理",
+            "display_priority": "medium",
+        },
     )
     metadata: dict[str, Any] = Field(
         description="视频元数据",
         examples=[{"duration": 900, "platform": "bilibili", "uploader": "UP主"}],
+        json_schema_extra={
+            "agent_hint": "辅助信息，包含时长、平台、UP主等",
+            "display_priority": "low",
+        },
     )
     timestamp: str = Field(description="ISO 8601 格式时间戳")
 
@@ -144,12 +174,36 @@ class LinkSummaryResult(BaseModel):
         timestamp: ISO 8601 格式时间戳
     """
 
-    status: str = Field(description="状态（success/error）")
+    status: str = Field(
+        description="状态（success/error）",
+        json_schema_extra={
+            "agent_hint": "首先检查此字段，success 时才处理其他字段",
+            "display_priority": "critical",
+        },
+    )
     url: str = Field(description="原始URL")
-    title: str = Field(description="文章标题")
+    title: str = Field(
+        description="文章标题",
+        json_schema_extra={
+            "agent_hint": "核心输出，推荐展示给用户",
+            "display_priority": "high",
+        },
+    )
     source: str = Field(description="来源网站")
-    summary: str = Field(description="摘要（200字左右）")
-    key_points: list[str] = Field(description="核心要点（3-5个）")
+    summary: str = Field(
+        description="摘要（200字左右）",
+        json_schema_extra={
+            "agent_hint": "核心输出，推荐作为主要展示内容",
+            "display_priority": "high",
+        },
+    )
+    key_points: list[str] = Field(
+        description="核心要点（3-5个）",
+        json_schema_extra={
+            "agent_hint": "核心输出，推荐以 bullet list 展示",
+            "display_priority": "high",
+        },
+    )
     tags: list[str] = Field(description="标签（3-5个）")
     word_count: int = Field(description="字数")
     reading_time: str = Field(description="阅读时间")
@@ -166,6 +220,10 @@ class LinkSummaryResult(BaseModel):
                 }
             ]
         ],
+        json_schema_extra={
+            "agent_hint": "可用于用户问答互动或测验",
+            "display_priority": "medium",
+        },
     )
     quiz: list[dict[str, Any]] = Field(
         default_factory=list,
@@ -180,6 +238,10 @@ class LinkSummaryResult(BaseModel):
                 }
             ]
         ],
+        json_schema_extra={
+            "agent_hint": "可用于测验或学习检查",
+            "display_priority": "medium",
+        },
     )
     files: dict[str, str | None] = Field(
         default_factory=dict,
@@ -190,6 +252,10 @@ class LinkSummaryResult(BaseModel):
                 "json_path": "./outputs/article.json",
             }
         ],
+        json_schema_extra={
+            "agent_hint": "导出文件路径，可用于文件下载",
+            "display_priority": "low",
+        },
     )
     timestamp: str = Field(description="ISO 8601 格式时间戳")
 
@@ -210,7 +276,13 @@ class VocabularyResult(BaseModel):
         timestamp: ISO 8601 格式时间戳
     """
 
-    status: str = Field(description="状态（success/error）")
+    status: str = Field(
+        description="状态（success/error）",
+        json_schema_extra={
+            "agent_hint": "首先检查此字段，success 时才处理其他字段",
+            "display_priority": "critical",
+        },
+    )
     content: str = Field(description="源内容（前200字符）")
     word_count: int = Field(description="提取单词数量")
     difficulty: str = Field(description="目标难度")
@@ -238,6 +310,10 @@ class VocabularyResult(BaseModel):
                 }
             ]
         ],
+        json_schema_extra={
+            "agent_hint": "核心输出，每个单词卡包含音标、释义、例句，推荐逐一展示",
+            "display_priority": "high",
+        },
     )
     context_story: dict[str, Any] | None = Field(
         default=None,
@@ -250,6 +326,10 @@ class VocabularyResult(BaseModel):
                 "difficulty": "intermediate",
             }
         ],
+        json_schema_extra={
+            "agent_hint": "包含所有单词的上下文短文，用于记忆巩固",
+            "display_priority": "medium",
+        },
     )
     statistics: dict[str, Any] = Field(
         default_factory=dict,
@@ -264,10 +344,18 @@ class VocabularyResult(BaseModel):
                 },
             }
         ],
+        json_schema_extra={
+            "agent_hint": "辅助信息，包含难度分布等统计",
+            "display_priority": "low",
+        },
     )
     files: dict[str, str | None] = Field(
         default_factory=dict,
         description="输出文件路径",
         examples=[{"markdown_path": "./outputs/vocabulary.md"}],
+        json_schema_extra={
+            "agent_hint": "导出文件路径，包含 Markdown 和 PNG 知识卡",
+            "display_priority": "low",
+        },
     )
     timestamp: str = Field(description="ISO 8601 格式时间戳")

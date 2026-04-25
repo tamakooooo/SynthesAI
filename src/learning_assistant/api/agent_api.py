@@ -22,10 +22,12 @@ Agent API - 标准化接口供各种 Agent 框架使用.
     result = await summarize_video(url="https://...")
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from loguru import logger
 
@@ -105,6 +107,65 @@ class AgentAPI:
         self.event_bus = EventBus()
 
         logger.success("AgentAPI initialized successfully")
+
+    @classmethod
+    def create_with_api_key(
+        cls,
+        provider: str,
+        api_key: str,
+        model: str | None = None,
+        config_path: Path | None = None,
+    ) -> AgentAPI:
+        """
+        Quick creation of AgentAPI with API key, no config file needed.
+
+        Useful for Agents that want to use Learning Assistant without
+        managing configuration files.
+
+        Args:
+            provider: LLM provider name (openai/anthropic/deepseek)
+            api_key: API key for the provider
+            model: Model name (optional, uses provider default)
+            config_path: Optional config path for other settings
+
+        Returns:
+            AgentAPI instance configured with the provided API key
+
+        Example:
+            >>> # Quick start without config file
+            >>> api = AgentAPI.create_with_api_key(
+            ...     provider="openai",
+            ...     api_key="sk-...",
+            ...     model="gpt-4"
+            ... )
+            >>> result = await api.summarize_video(url="https://...")
+        """
+        # Set environment variable for the provider
+        env_key = f"{provider.upper()}_API_KEY"
+        original_value = os.environ.get(env_key)
+        os.environ[env_key] = api_key
+
+        try:
+            # Create instance
+            instance = cls(config_path=config_path)
+
+            # Override LLM config if model specified
+            if model:
+                provider_config = instance.config_manager.settings_model.llm.providers.get(provider)
+                if provider_config:
+                    if hasattr(provider_config, 'model'):
+                        provider_config.model = model
+                    elif isinstance(provider_config, dict):
+                        provider_config['model'] = model
+
+            return instance
+        except Exception as e:
+            # Restore original environment value on failure
+            if original_value:
+                os.environ[env_key] = original_value
+            elif env_key in os.environ:
+                del os.environ[env_key]
+            raise
 
     async def summarize_video(
         self,
@@ -665,6 +726,241 @@ class AgentAPI:
 
         except Exception as e:
             logger.error(f"Failed to get statistics: {e}")
+            raise
+
+    async def summarize_video_stream(
+        self,
+        url: str,
+        format: str = "markdown",
+        language: str = "zh",
+        output_dir: str | None = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """
+        Stream video summary with intermediate results.
+
+        Yields processing stages as they complete, allowing Agents to
+        show progress and intermediate results to users.
+
+        Args:
+            url: Video URL
+            format: Output format (markdown/pdf)
+            language: Summary language
+            output_dir: Output directory
+            **kwargs: Other options
+
+        Yields:
+            Progress dicts with stage and data:
+            - {"stage": "downloading", "data": {"title": "..."}}
+            - {"stage": "extracting_audio", "data": {"duration": 900}}
+            - {"stage": "transcribing", "data": {"progress": 0.5}}
+            - {"stage": "transcribed", "data": {"transcript": "..."}}
+            - {"stage": "summarizing", "data": {"progress": 0.3}}
+            - {"stage": "completed", "data": {"files": {...}}}
+
+        Example:
+            >>> api = AgentAPI()
+            >>> for progress in await api.summarize_video_stream(url):
+            ...     if progress["stage"] == "transcribed":
+            ...         print(f"Got transcript: {len(progress['data']['transcript'])} chars")
+            ...     if progress["stage"] == "completed":
+            ...         print(f"Done! Files: {progress['data']['files']}")
+        """
+        import tempfile
+        from learning_assistant.modules.video_summary import VideoSummaryModule
+        from learning_assistant.core.event_bus import Event, EventType
+
+        logger.info(f"Starting video stream: {url}")
+
+        video_module = VideoSummaryModule()
+        video_config = self.config_manager.modules_model.video_summary.config.copy()
+
+        # Merge LLM settings
+        if "llm" not in video_config:
+            video_config["llm"] = {}
+        provider = video_config["llm"].get("provider", "openai")
+        global_llm_settings = self.config_manager.settings_model.llm.providers.get(provider)
+        if global_llm_settings and hasattr(global_llm_settings, 'model_dump'):
+            global_llm_settings_dict = global_llm_settings.model_dump()
+        else:
+            global_llm_settings_dict = global_llm_settings or {}
+        video_config["llm"] = {
+            **global_llm_settings_dict,
+            **video_config["llm"],
+        }
+
+        if format:
+            video_config["output"] = video_config.get("output", {})
+            video_config["output"]["format"] = format
+        if output_dir:
+            video_config["output"] = video_config.get("output", {})
+            video_config["output"]["directory"] = output_dir
+
+        video_module.initialize(video_config, self.event_bus)
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                work_dir = Path(tmpdir)
+
+                # Stage 1: Download
+                yield {"stage": "downloading", "data": {"url": url}}
+                video_info = video_module._download_video(url, work_dir)
+                yield {
+                    "stage": "downloaded",
+                    "data": {
+                        "title": video_info["title"],
+                        "duration": video_info["duration"],
+                        "platform": video_info["platform"],
+                    },
+                }
+
+                # Stage 2: Extract audio
+                yield {"stage": "extracting_audio", "data": {}}
+                audio_info = video_module._extract_audio(video_info["video_path"], work_dir)
+                yield {
+                    "stage": "audio_extracted",
+                    "data": {
+                        "duration": audio_info["duration"],
+                        "sample_rate": audio_info["sample_rate"],
+                    },
+                }
+
+                # Stage 3: Transcribe
+                yield {"stage": "transcribing", "data": {"progress": 0.0}}
+                transcript = video_module._transcribe_audio(audio_info["audio_path"])
+                yield {
+                    "stage": "transcribed",
+                    "data": {
+                        "transcript": transcript,
+                        "length": len(transcript),
+                    },
+                }
+
+                # Stage 4: Generate summary
+                yield {"stage": "summarizing", "data": {"progress": 0.0}}
+                summary_data = video_module._generate_summary(
+                    video_info=video_info,
+                    transcript=transcript,
+                    language=language,
+                    focus_areas=kwargs.get("focus_areas", []),
+                )
+                yield {
+                    "stage": "summary_generated",
+                    "data": {
+                        "key_points": summary_data.get("key_points", []),
+                        "knowledge": summary_data.get("knowledge", []),
+                    },
+                }
+
+                # Stage 5: Export
+                yield {"stage": "exporting", "data": {}}
+                output_paths = video_module._export_output(
+                    summary_data=summary_data,
+                    output_format=format,
+                    video_info=video_info,
+                )
+
+                result = {
+                    "status": "success",
+                    "video_info": video_info,
+                    "summary": summary_data,
+                    "output_paths": output_paths,
+                }
+
+                yield {
+                    "stage": "completed",
+                    "data": {
+                        "title": video_info["title"],
+                        "files": {k: str(v) for k, v in output_paths.items()},
+                        "summary_preview": summary_data.get("summary", "")[:500],
+                    },
+                }
+
+        except Exception as e:
+            yield {"stage": "error", "data": {"error": str(e), "error_type": type(e).__name__}}
+            raise
+
+    async def process_link_stream(
+        self,
+        url: str,
+        provider: str = "openai",
+        **kwargs: Any,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """
+        Stream link processing with intermediate results.
+
+        Yields processing stages as they complete.
+
+        Args:
+            url: Web URL
+            provider: LLM provider
+            **kwargs: Other options
+
+        Yields:
+            Progress dicts:
+            - {"stage": "fetching", "data": {"url": "..."}}
+            - {"stage": "fetched", "data": {"word_count": 3500}}
+            - {"stage": "analyzing", "data": {}}
+            - {"stage": "completed", "data": {"title": "...", "summary": "..."}}
+        """
+        from learning_assistant.modules.link_learning import LinkLearningModule
+        from learning_assistant.core.services import ContentFetcher, ContentParser
+
+        logger.info(f"Starting link stream: {url}")
+
+        yield {"stage": "fetching", "data": {"url": url}}
+
+        try:
+            # Fetch content
+            fetcher = ContentFetcher()
+            content = await fetcher.fetch(url)
+            yield {
+                "stage": "fetched",
+                "data": {
+                    "word_count": len(content),
+                    "source": url.split("//")[1].split("/")[0] if "//" in url else url,
+                },
+            }
+
+            # Parse content
+            yield {"stage": "parsing", "data": {}}
+            parser = ContentParser()
+            parsed = parser.parse(content, url)
+
+            yield {
+                "stage": "parsed",
+                "data": {
+                    "title": parsed.title,
+                    "word_count": parsed.word_count,
+                },
+            }
+
+            # Initialize module for LLM processing
+            yield {"stage": "analyzing", "data": {"progress": 0.0}}
+            module = LinkLearningModule()
+            config = {"llm": {"provider": provider}}
+            module.initialize(config, self.event_bus)
+
+            # Set LLM service
+            from learning_assistant.core.llm.service import LLMService
+            api_key = os.environ.get(f"{provider.upper()}_API_KEY")
+            if api_key:
+                module.llm_service = LLMService(provider=provider, api_key=api_key)
+
+            knowledge_card = await module.process(url)
+
+            yield {
+                "stage": "completed",
+                "data": {
+                    "title": knowledge_card.title,
+                    "summary": knowledge_card.summary,
+                    "key_points": knowledge_card.key_points[:3],
+                    "tags": knowledge_card.tags,
+                },
+            }
+
+        except Exception as e:
+            yield {"stage": "error", "data": {"error": str(e), "error_type": type(e).__name__}}
             raise
 
 

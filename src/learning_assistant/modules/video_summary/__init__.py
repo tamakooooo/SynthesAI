@@ -4,6 +4,8 @@ Video Summary Module for Learning Assistant.
 This module provides complete video content summarization workflow.
 """
 
+import asyncio
+import concurrent.futures
 import subprocess
 import tempfile
 from pathlib import Path
@@ -160,7 +162,34 @@ class VideoSummaryModule(BaseModule):
 
     def execute(self, input_data: dict[str, Any]) -> dict[str, Any]:
         """
-        Execute video summary workflow.
+        Execute video summary workflow (sync wrapper).
+
+        Args:
+            input_data: Input data containing:
+                - url: Video URL
+                - language: Output language (default: zh)
+                - focus_areas: Focus areas for summary
+                - output_format: Output format (markdown/pdf)
+
+        Returns:
+            Summary output data
+        """
+        # Run async process in event loop (handle both cases)
+        try:
+            asyncio.get_running_loop()
+            # Already running loop - use thread pool to avoid conflict
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(
+                    asyncio.run, self.execute_async(input_data)
+                )
+                return future.result()
+        except RuntimeError:
+            # No running loop - create new one
+            return asyncio.run(self.execute_async(input_data))
+
+    async def execute_async(self, input_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Execute video summary workflow (async).
 
         Args:
             input_data: Input data containing:
