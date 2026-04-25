@@ -1,0 +1,8 @@
+name: feishu
+type: adapter
+version: 0.3.1
+description: Feishu knowledge base adapter for automatic document publishing
+enabled: true
+priority: 10
+class_name: FeishuKnowledgeBaseAdapter
+module_name: adapter

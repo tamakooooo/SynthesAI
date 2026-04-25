@@ -29,6 +29,46 @@ class ServerContext:
     _initialized: bool = False
 
     @classmethod
+    def _resolve_config_path(cls, config_dir: str | None = None):
+        """Resolve active configuration directory."""
+        from pathlib import Path
+        import os
+
+        if config_dir:
+            return Path(config_dir)
+
+        env_config = os.environ.get("SYNTHESAI_CONFIG_DIR")
+        if env_config:
+            return Path(env_config)
+
+        return Path("config")
+
+    @classmethod
+    def _build_combined_plugin_config(cls) -> dict[str, Any]:
+        """Build merged module and adapter config for plugin initialization."""
+        if cls.config_manager is None:
+            raise RuntimeError("ConfigManager not available")
+
+        modules_model = cls.config_manager.modules_model
+        adapters_model = cls.config_manager.adapters_model
+        if modules_model is None or adapters_model is None:
+            raise RuntimeError("Plugin configuration not loaded")
+
+        modules_config = modules_model.model_dump()
+        adapters_config = adapters_model.model_dump()
+        adapter_subscriptions = adapters_config.get("event_bus", {}).get("subscriptions", {})
+
+        combined_plugin_config = dict(modules_config)
+        for adapter_name, adapter_config in adapters_config.items():
+            if adapter_name == "event_bus":
+                continue
+            adapter_payload = dict(adapter_config)
+            adapter_payload["subscriptions"] = adapter_subscriptions.get(adapter_name, [])
+            combined_plugin_config[adapter_name] = adapter_payload
+
+        return combined_plugin_config
+
+    @classmethod
     def initialize(cls, config_dir: str | None = None) -> None:
         """
         Initialize shared instances at server startup.
@@ -44,16 +84,8 @@ class ServerContext:
 
         # Determine config directory
         from pathlib import Path
-        import os
 
-        if config_dir:
-            config_path = Path(config_dir)
-        else:
-            env_config = os.environ.get("SYNTHESAI_CONFIG_DIR")
-            if env_config:
-                config_path = Path(env_config)
-            else:
-                config_path = Path("config")
+        config_path = cls._resolve_config_path(config_dir)
 
         # Initialize ConfigManager
         cls.config_manager = ConfigManager(config_path)
@@ -73,14 +105,14 @@ class ServerContext:
         cls.plugin_manager.discover_plugins()
 
         # Load and initialize plugins
-        modules_config = cls.config_manager.modules_model.model_dump()
+        combined_plugin_config = cls._build_combined_plugin_config()
         for plugin_name in cls.plugin_manager.plugins.keys():
             cls.plugin_manager.load_plugin(plugin_name)
-        cls.plugin_manager.initialize_all(modules_config, cls.event_bus)
+        cls.plugin_manager.initialize_all(combined_plugin_config, cls.event_bus)
         logger.info(f"Plugins initialized: {len(cls.plugin_manager.plugins)}")
 
         # Initialize shared AgentAPI (reuse existing initialization)
-        cls.shared_api = AgentAPI()
+        cls.shared_api = AgentAPI(config_path)
         logger.info("AgentAPI instance created")
 
         cls._initialized = True
@@ -119,6 +151,27 @@ class ServerContext:
         if cls.config_manager is None:
             raise RuntimeError("ConfigManager not available")
         return cls.config_manager
+
+    @classmethod
+    def reload_plugins(cls) -> None:
+        """Reload plugins using the active configuration directory."""
+        if not cls._initialized:
+            raise RuntimeError("ServerContext not initialized")
+        if cls.config_manager is None or cls.plugin_manager is None or cls.event_bus is None:
+            raise RuntimeError("ServerContext is missing required components")
+
+        logger.info("Reloading plugins in ServerContext")
+        cls.config_manager.load_all()
+        cls.plugin_manager.cleanup_all()
+        cls.plugin_manager.plugins.clear()
+        cls.plugin_manager.discover_plugins()
+
+        combined_plugin_config = cls._build_combined_plugin_config()
+        for plugin_name in cls.plugin_manager.plugins.keys():
+            cls.plugin_manager.load_plugin(plugin_name)
+        cls.plugin_manager.initialize_all(combined_plugin_config, cls.event_bus)
+        cls.shared_api = AgentAPI(cls.config_manager.config_dir)
+        logger.info(f"Plugins reloaded: {len(cls.plugin_manager.loaded_plugins)}")
 
     @classmethod
     def is_initialized(cls) -> bool:

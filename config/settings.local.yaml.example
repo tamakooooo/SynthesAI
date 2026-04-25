@@ -1,38 +1,133 @@
-# Learning Assistant - Local Settings (SENSITIVE - DO NOT COMMIT)
-# Version: 0.1.0
+# SynthesAI Local Unified Configuration Template
+# Version: 0.3.1
 #
-# This file contains sensitive information like API keys.
-# Add this file to .gitignore to prevent accidental commits.
+# This file is the recommended single local override file.
+# Put your private keys and all local customizations here.
+# Never commit real credentials to git.
 #
-# Usage:
-# 1. Copy this file to settings.local.yaml
-# 2. Fill in your API keys
-# 3. This file will override settings.yaml
+# Priority:
+# 1. Environment variables
+# 2. settings.local.yaml
+# 3. settings.yaml / modules.yaml / adapters.yaml / server.yaml
 
-# LLM Provider Settings (with real API keys)
+# -------------------------------------------------------------------
+# Global application and LLM configuration
+# -------------------------------------------------------------------
+app:
+  log_level: "INFO"
+
 llm:
   default_provider: "openai"
 
   providers:
     openai:
-      # Your OpenAI API key
-      api_key: "REDACTED_API_KEY"
-
-      # Custom base URL (optional, for non-OpenAI endpoints)
+      # api_key: "your-openai-api-key"
+      api_key_env: "OPENAI_API_KEY"
       base_url: "https://api.tamako.online/v1"
-
-      # Default model
       default_model: "kimi-k2.5"
+      models:
+        - "kimi-k2.5"
+        - "gpt-4o"
+        - "gpt-4-turbo"
+      timeout: 30
+      max_retries: 3
 
     anthropic:
-      # Your Anthropic API key
-      # api_key: "sk-ant-xxxxx"
+      # api_key: "your-anthropic-api-key"
+      api_key_env: "ANTHROPIC_API_KEY"
+      default_model: "claude-3-5-sonnet-20241022"
 
     deepseek:
-      # Your DeepSeek API key
-      # api_key: "sk-xxxxx"
+      # api_key: "your-deepseek-api-key"
+      api_key_env: "DEEPSEEK_API_KEY"
+      base_url: "https://api.deepseek.com/v1"
+      default_model: "deepseek-chat"
 
-# You can override any settings from settings.yaml here
-# For example:
-# app:
-#   log_level: "DEBUG"
+# -------------------------------------------------------------------
+# Module overrides
+# -------------------------------------------------------------------
+modules:
+  video_summary:
+    enabled: true
+    priority: 1
+    config:
+      llm:
+        provider: "openai"
+        model: "kimi-k2.5"
+        base_url: "https://api.tamako.online/v1"
+      cookies:
+        bilibili: "config/cookies/bilibili_cookies.txt"
+        douyin: "config/cookies/douyin_cookies.txt"
+        youtube: "config/cookies/youtube_cookies.txt"
+      frame_extraction:
+        enabled: true
+        output_dir: "data/frames"
+
+  link_learning:
+    enabled: true
+    priority: 2
+    config:
+      llm:
+        provider: "openai"
+        model: "kimi-k2.5"
+        base_url: "https://api.tamako.online/v1"
+      output:
+        save_history: true
+
+  vocabulary:
+    enabled: true
+    priority: 3
+    config:
+      llm:
+        provider: "openai"
+        model: "kimi-k2.5"
+      story:
+        enabled: true
+      output:
+        directory: "data/outputs/vocabulary"
+        visual_card:
+          enabled: true
+
+# -------------------------------------------------------------------
+# Adapter and event-bus overrides
+# -------------------------------------------------------------------
+adapters:
+  feishu:
+    enabled: false
+    priority: 1
+    config:
+      app_id_env: "FEISHU_APP_ID"
+      app_secret_env: "FEISHU_APP_SECRET"
+      space_id: ""
+      root_node_token: ""
+      publish_modules:
+        - "video_summary"
+        - "link_learning"
+        - "vocabulary"
+      title_template: "{module} | {title}"
+      overwrite_strategy: "create_new"
+
+event_bus:
+  subscriptions:
+    feishu:
+      - "video.summarized"
+      - "link.processed"
+      - "vocabulary.extracted"
+
+# -------------------------------------------------------------------
+# Server overrides
+# These values take effect after server restart.
+# -------------------------------------------------------------------
+server:
+  host: "0.0.0.0"
+  port: 8000
+  auth:
+    enabled: true
+    api_key_env: "SYNTHESAI_API_KEY"
+  task_queue:
+    max_concurrent: 3
+    max_queue_size: 100
+    result_ttl: 3600
+  timeouts:
+    sync_request: 120
+    task_polling: 10

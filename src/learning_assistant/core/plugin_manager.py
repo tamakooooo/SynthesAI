@@ -314,8 +314,14 @@ class PluginManager:
             try:
                 # Get plugin config (modules and adapters are at top level)
                 plugin_data = config.get(name, {})
-                # Extract 'config' sub-key if present (for modules.yaml structure)
-                plugin_config = plugin_data.get("config", plugin_data)
+                if isinstance(plugin, BaseAdapter):
+                    if plugin_data.get("enabled") is False:
+                        logger.info(f"Skipping disabled adapter: {name}")
+                        continue
+                    plugin_config = plugin_data
+                else:
+                    # Extract 'config' sub-key if present (for modules.yaml structure)
+                    plugin_config = plugin_data.get("config", plugin_data)
 
                 # Initialize plugin
                 plugin.initialize(plugin_config, event_bus)

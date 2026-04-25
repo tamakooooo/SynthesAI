@@ -66,11 +66,24 @@ class AppState:
             self.plugin_manager.load_plugin(plugin_name)
 
         # Initialize loaded plugins with config and event_bus
-        plugin_config = (
+        modules_config = (
             self.config_manager.modules_model.model_dump()
             if self.config_manager.modules_model
             else {}
         )
+        adapters_config = (
+            self.config_manager.adapters_model.model_dump()
+            if self.config_manager.adapters_model
+            else {}
+        )
+        adapter_subscriptions = adapters_config.get("event_bus", {}).get("subscriptions", {})
+        plugin_config = modules_config.copy()
+        for adapter_name, adapter_config in adapters_config.items():
+            if adapter_name == "event_bus":
+                continue
+            adapter_payload = dict(adapter_config)
+            adapter_payload["subscriptions"] = adapter_subscriptions.get(adapter_name, [])
+            plugin_config[adapter_name] = adapter_payload
         self.plugin_manager.initialize_all(
             config=plugin_config, event_bus=self.event_bus
         )
@@ -79,11 +92,7 @@ class AppState:
         self._register_plugin_commands()
 
         # Initialize AuthManager
-        modules_config = (
-            self.config_manager.modules_model.model_dump()
-            if self.config_manager.modules_model
-            else {}
-        )
+        modules_config = modules_config if self.config_manager.modules_model else {}
         video_summary_config = modules_config.get("video_summary", {})
         auth_config = video_summary_config.get("config", {}).get("auth", {})
         self.auth_manager = AuthManager(config=auth_config)
@@ -250,8 +259,8 @@ def setup() -> None:
     console.print("\n[bold green]Setup complete![/bold green]")
     console.print("[yellow]Next steps:[/yellow]")
     console.print("  1. Install FFmpeg if needed: https://ffmpeg.org/download.html")
-    console.print("  2. Set API keys in environment variables or config/settings.yaml")
-    console.print("  3. Edit config/settings.yaml to customize settings")
+    console.print("  2. Set API keys in environment variables or config/settings.local.yaml")
+    console.print("  3. Prefer editing config/settings.local.yaml for local customization")
     console.print("  4. Run: la list-plugins to see available modules")
     console.print("  5. Run: la video <video_url> to process a video")
 
@@ -332,9 +341,10 @@ def config() -> None:
         console.print(f"  Warn Threshold: ${cost_tracking.warning_threshold}")
 
     console.print("\n[yellow]Config Files:[/yellow]")
-    console.print("  Settings: config/settings.yaml")
-    console.print("  Modules: config/modules.yaml")
-    console.print("  Adapters: config/adapters.yaml")
+    console.print("  Primary local override: config/settings.local.yaml")
+    console.print("  Default settings: config/settings.yaml")
+    console.print("  Default module template: config/modules.yaml")
+    console.print("  Default adapter template: config/adapters.yaml")
 
 
 @app.command()

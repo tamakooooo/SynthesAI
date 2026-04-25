@@ -92,6 +92,7 @@ secrets.yaml
 .env.local
 .env.*.local
 settings.local.yaml  # Local settings with API keys
+config/settings.local.yaml
 
 # Authentication cookies
 config/cookies/*.txt

@@ -215,6 +215,103 @@ export interface LLMConfig {
   providers: ProviderInfo[];
 }
 
+export interface FrontendProviderConfig {
+  name: string;
+  api_key: string | null;
+  api_key_env: string;
+  default_model: string;
+  models: string[];
+  base_url: string | null;
+}
+
+export interface FeishuConfiguration {
+  enabled: boolean;
+  app_id_env: string;
+  app_secret_env: string;
+  space_id: string;
+  root_node_token: string;
+  publish_modules: string[];
+  title_template: string;
+  overwrite_strategy: string;
+}
+
+export interface ModuleConfiguration {
+  name: string;
+  enabled: boolean;
+  priority: number;
+}
+
+export interface ServerConfiguration {
+  host: string;
+  port: number;
+  auth_enabled: boolean;
+  api_key_env: string;
+  sync_request_timeout: number;
+  task_polling_timeout: number;
+  max_concurrent: number;
+  max_queue_size: number;
+  result_ttl: number;
+}
+
+export interface FrontendConfiguration {
+  file_path: string;
+  exists: boolean;
+  default_provider: string;
+  providers: FrontendProviderConfig[];
+  feishu: FeishuConfiguration;
+  modules: ModuleConfiguration[];
+  server: ServerConfiguration;
+}
+
+export async function getFrontendConfiguration(): Promise<FrontendConfiguration> {
+  return request('/api/v1/configuration');
+}
+
+export async function saveFrontendConfiguration(config: {
+  default_provider: string;
+  providers: FrontendProviderConfig[];
+  feishu: FeishuConfiguration;
+  modules: ModuleConfiguration[];
+  server: ServerConfiguration;
+}): Promise<{
+  success: boolean;
+  message: string;
+  config?: FrontendConfiguration;
+}> {
+  return request('/api/v1/configuration', {
+    method: 'POST',
+    body: config,
+  });
+}
+
+export interface FeishuCheckResult {
+  configured: boolean;
+  adapter_loaded: boolean;
+  enabled: boolean;
+  message: string;
+  config_summary: Record<string, string>;
+  token_verified: boolean;
+  space_accessible: boolean;
+  root_node_accessible: boolean;
+}
+
+export async function checkFeishuConfiguration(): Promise<FeishuCheckResult> {
+  return request('/system/feishu/check');
+}
+
+export async function verifyFeishuConfiguration(): Promise<FeishuCheckResult> {
+  return request('/system/feishu/verify', { method: 'POST' });
+}
+
+export async function publishFeishuTestDocument(): Promise<{
+  success: boolean;
+  message: string;
+  node_token?: string | null;
+  document_id?: string | null;
+}> {
+  return request('/system/feishu/publish-test', { method: 'POST' });
+}
+
 export async function getLLMConfig(): Promise<LLMConfig> {
   return request('/api/v1/llm/config');
 }

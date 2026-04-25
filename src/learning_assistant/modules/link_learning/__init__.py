@@ -12,11 +12,12 @@ from typing import Any
 from loguru import logger
 
 from learning_assistant.core.base_module import BaseModule
-from learning_assistant.core.event_bus import EventBus
+from learning_assistant.core.event_bus import Event, EventBus, EventType
 from learning_assistant.core.exporters import MarkdownExporter
 from learning_assistant.core.exporters.visual_card import VisualCardGenerator
 from learning_assistant.core.history_manager import HistoryManager
 from learning_assistant.core.llm.service import LLMService
+from learning_assistant.core.publishing import PublishBlock, PublishPayload
 from learning_assistant.core.prompt_manager import PromptManager
 from learning_assistant.modules.link_learning.content_fetcher import ContentFetcher
 from learning_assistant.modules.link_learning.content_parser import ContentParser
@@ -219,6 +220,7 @@ class LinkLearningModule(BaseModule):
                 logger.info("Step 4: Exporting and saving...")
                 await self._export_and_save(knowledge_card)
 
+            self._publish_completion_event(url, knowledge_card)
             logger.info(f"Processing completed: {url}")
             return knowledge_card
 
@@ -478,3 +480,63 @@ class LinkLearningModule(BaseModule):
 
         # Return as dict
         return knowledge_card.to_dict()
+
+    def _publish_completion_event(
+        self,
+        url: str,
+        knowledge_card: KnowledgeCard,
+    ) -> None:
+        """Publish normalized completion event for adapters."""
+        if not self.event_bus:
+            return
+
+        payload = self._build_publish_payload(url, knowledge_card)
+        self.event_bus.publish(
+            Event(
+                event_type=EventType.LINK_PROCESSED,
+                source=self.name,
+                data={
+                    "module": self.name,
+                    "source_url": url,
+                    "result": knowledge_card.to_dict(),
+                    "publish_payload": payload.model_dump(mode="json"),
+                },
+            )
+        )
+
+    def _build_publish_payload(
+        self,
+        url: str,
+        knowledge_card: KnowledgeCard,
+    ) -> PublishPayload:
+        """Map knowledge card output to normalized publishing payload."""
+        concept_items = [
+            f"{concept.term}: {concept.definition}"
+            for concept in knowledge_card.key_concepts
+        ]
+
+        blocks = [
+            PublishBlock(type="heading", text="摘要", level=2),
+            PublishBlock(type="paragraph", text=knowledge_card.summary),
+        ]
+        if knowledge_card.key_points:
+            blocks.append(PublishBlock(type="heading", text="关键点", level=2))
+            blocks.append(PublishBlock(type="bullet_list", items=knowledge_card.key_points))
+        if concept_items:
+            blocks.append(PublishBlock(type="heading", text="关键概念", level=2))
+            blocks.append(PublishBlock(type="bullet_list", items=concept_items))
+
+        return PublishPayload(
+            module=self.name,
+            title=knowledge_card.title,
+            summary=knowledge_card.summary,
+            source_url=url,
+            blocks=blocks,
+            tags=knowledge_card.tags,
+            metadata={
+                "source": knowledge_card.source,
+                "word_count": knowledge_card.word_count,
+                "reading_time": knowledge_card.reading_time,
+                "difficulty": knowledge_card.difficulty,
+            },
+        )

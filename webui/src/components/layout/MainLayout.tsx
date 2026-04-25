@@ -39,7 +39,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-lg lg:p-2xl max-w-4xl mx-auto w-full">
+        <main className="flex-1 p-lg lg:p-2xl max-w-5xl mx-auto w-full">
           {children}
         </main>
       </div>

@@ -3,6 +3,20 @@
 
 # Adapter Configuration
 adapters:
+  feishu:
+    enabled: false
+    priority: 1
+
+    config:
+      app_id_env: "FEISHU_APP_ID"
+      app_secret_env: "FEISHU_APP_SECRET"
+      space_id: ""
+      root_node_token: ""
+      publish_modules:
+        - "video_summary"
+      overwrite_strategy: "create_new"
+      title_template: "{module} | {title}"
+
   # Test Adapter (for validation)
   test_validation:
     enabled: false
@@ -26,6 +40,8 @@ event_bus:
 
   # Event subscriptions (adapter listens to events)
   subscriptions:
+    feishu:
+      - "video.summarized"
     # Test adapter can subscribe to events for testing
     test_validation:
       - "video.summarized"

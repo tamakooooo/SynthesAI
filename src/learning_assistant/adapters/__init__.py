@@ -9,9 +9,11 @@ from learning_assistant.adapters.test_validation_adapter import (
     ErrorSimulationAdapter,
     TestValidationAdapter,
 )
+from learning_assistant.adapters.feishu import FeishuKnowledgeBaseAdapter
 
 __all__ = [
     "TestValidationAdapter",
     "AsyncTestAdapter",
     "ErrorSimulationAdapter",
+    "FeishuKnowledgeBaseAdapter",
 ]

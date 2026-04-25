@@ -7,12 +7,8 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { path: '/link', label: '知识卡片', icon: '📚' },
-  { path: '/vocabulary', label: '词汇学习', icon: '📝' },
-  { path: '/video', label: '视频总结', icon: '🎬' },
-  { path: '/history', label: '学习历史', icon: '📋' },
-  { path: '/statistics', label: '学习统计', icon: '📊' },
-  { path: '/settings', label: '设置', icon: '⚙️' },
+  { path: '/login', label: '平台登录', icon: '🔐' },
+  { path: '/config', label: '集中配置', icon: '⚙️' },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {

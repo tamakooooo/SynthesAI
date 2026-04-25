@@ -23,6 +23,7 @@ Agent API - 标准化接口供各种 Agent 框架使用.
 """
 
 from datetime import datetime
+import os
 from pathlib import Path
 from typing import Any
 
@@ -70,18 +71,24 @@ class AgentAPI:
         初始化 Agent API.
 
         Args:
-            config_path: 配置文件路径（可选）。如果不提供，使用默认配置。
+            config_path: 配置目录路径（可选）。如果不提供，优先读取环境变量。
         """
         logger.info("Initializing AgentAPI")
+        config_dir = config_path or Path(os.environ.get("SYNTHESAI_CONFIG_DIR", "config"))
 
         # 初始化配置管理器
         from learning_assistant.core.config_manager import ConfigManager
 
-        self.config_manager = ConfigManager()
+        self.config_manager = ConfigManager(config_dir=config_dir)
         self.config_manager.load_all()
 
         # 初始化插件管理器
-        self.plugin_manager = PluginManager(config_path)
+        plugin_dirs = [
+            config_dir.parent / "src" / "learning_assistant" / "modules",
+            config_dir.parent / "src" / "learning_assistant" / "adapters",
+            Path("plugins"),
+        ]
+        self.plugin_manager = PluginManager(plugin_dirs=plugin_dirs)
 
         # 发现并加载所有插件
         discovered = self.plugin_manager.discover_plugins()
@@ -472,7 +479,11 @@ class AgentAPI:
         """
         列出所有可用技能.
 
-        返回所有已加载模块的信息，包括名称、描述、版本、状态。
+        返回适合 agent 消费的技能信息，包括：
+        - 发现到的插件
+        - 当前配置下是否启用
+        - 当前进程中是否已加载
+        - 推荐动作列表
 
         Returns:
             SkillInfo 列表
@@ -485,21 +496,63 @@ class AgentAPI:
         """
         logger.debug("Listing available skills")
 
-        # 获取已发现插件的元数据
         discovered_plugins = self.plugin_manager.plugins
+        loaded_plugins = self.plugin_manager.loaded_plugins
+
+        actions_by_plugin = {
+            "video_summary": ["submit_video_task", "get_video_task_status", "get_video_task_result"],
+            "link_learning": ["process_link"],
+            "vocabulary": ["extract_vocabulary"],
+            "feishu": ["verify_feishu", "publish_to_feishu", "publish_test_document"],
+        }
 
         skills = [
             SkillInfo(
                 name=plugin_metadata.name,
                 description=plugin_metadata.description,
                 version=plugin_metadata.version,
-                status="available" if plugin_metadata.enabled else "disabled",
+                status=self._resolve_skill_status(plugin_metadata.name, plugin_metadata.type),
+                type=plugin_metadata.type,
+                enabled=self._resolve_skill_enabled(plugin_metadata.name, plugin_metadata.type),
+                loaded=plugin_metadata.name in loaded_plugins,
+                priority=self._resolve_skill_priority(plugin_metadata.name),
+                actions=actions_by_plugin.get(plugin_metadata.name, []),
             )
             for plugin_metadata in discovered_plugins.values()
         ]
 
         logger.debug(f"Found {len(skills)} skills")
         return skills
+
+    def _resolve_skill_enabled(self, plugin_name: str, plugin_type: str) -> bool:
+        """Resolve plugin enabled flag from current merged runtime configuration."""
+        try:
+            plugin_config = self.config_manager.get_plugin_config(plugin_name)
+            return bool(plugin_config.get("enabled", True))
+        except Exception:
+            logger.debug(f"Falling back to discovered metadata for plugin enabled state: {plugin_name}")
+            metadata = self.plugin_manager.plugins.get(plugin_name)
+            return bool(metadata.enabled) if metadata else False
+
+    def _resolve_skill_priority(self, plugin_name: str) -> int | None:
+        """Resolve plugin priority from current merged runtime configuration."""
+        try:
+            plugin_config = self.config_manager.get_plugin_config(plugin_name)
+            priority = plugin_config.get("priority")
+            return priority if isinstance(priority, int) else None
+        except Exception:
+            metadata = self.plugin_manager.plugins.get(plugin_name)
+            return metadata.priority if metadata else None
+
+    def _resolve_skill_status(self, plugin_name: str, plugin_type: str) -> str:
+        """Resolve runtime-oriented skill status."""
+        enabled = self._resolve_skill_enabled(plugin_name, plugin_type)
+        loaded = plugin_name in self.plugin_manager.loaded_plugins
+        if not enabled:
+            return "disabled"
+        if loaded:
+            return "available"
+        return "error"
 
     def get_history(
         self,

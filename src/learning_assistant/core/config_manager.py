@@ -50,6 +50,7 @@ class ConfigManager:
         - adapters.yaml (adapter configurations)
         """
         logger.info("Loading all configurations")
+        local_settings_dict: dict[str, Any] = {}
 
         # Load settings.yaml
         settings_file = self.config_dir / "settings.yaml"
@@ -77,6 +78,10 @@ class ConfigManager:
             # Extract 'modules' key if present (YAML structure has top-level 'modules' key)
             if "modules" in modules_dict:
                 modules_dict = modules_dict["modules"]
+
+            local_module_overrides = local_settings_dict.get("modules", {})
+            if local_module_overrides:
+                modules_dict = self._deep_merge(modules_dict, local_module_overrides)
             self.modules_model = self.validate_config(modules_dict, Modules)
             logger.info("Modules loaded and validated successfully")
         else:
@@ -94,6 +99,17 @@ class ConfigManager:
                 if "event_bus" in adapters_dict:
                     adapters_inner["event_bus"] = adapters_dict["event_bus"]
                 adapters_dict = adapters_inner
+
+            # Allow settings.local.yaml to carry adapter overrides so frontend can
+            # manage a single local configuration file.
+            local_adapter_overrides: dict[str, Any] = {}
+            if "adapters" in local_settings_dict:
+                local_adapter_overrides.update(local_settings_dict["adapters"])
+            if "event_bus" in local_settings_dict:
+                local_adapter_overrides["event_bus"] = local_settings_dict["event_bus"]
+            if local_adapter_overrides:
+                adapters_dict = self._deep_merge(adapters_dict, local_adapter_overrides)
+
             self.adapters_model = self.validate_config(adapters_dict, Adapters)
             logger.info("Adapters loaded and validated successfully")
         else:

@@ -13,8 +13,10 @@ from loguru import logger
 
 from learning_assistant.core.base_module import BaseModule
 from learning_assistant.core.event_bus import EventBus
+from learning_assistant.core.event_bus import Event, EventType
 from learning_assistant.core.exporters import MarkdownExporter
 from learning_assistant.core.llm.service import LLMService
+from learning_assistant.core.publishing import PublishBlock, PublishPayload
 from learning_assistant.core.prompt_manager import PromptManager
 from learning_assistant.modules.video_summary.audio_extractor import AudioExtractor
 from learning_assistant.modules.video_summary.downloader import VideoDownloader
@@ -279,12 +281,14 @@ class VideoSummaryModule(BaseModule):
                     video_info=video_info,
                 )
 
-                return {
+                result = {
                     "status": "success",
                     "video_info": video_info,
                     "summary": summary_data,
                     "output_paths": output_paths,
                 }
+                self._publish_completion_event(video_url, result)
+                return result
 
         except Exception as e:
             logger.error(f"Video summary failed: {e}")
@@ -479,6 +483,75 @@ class VideoSummaryModule(BaseModule):
         except Exception as e:
             logger.warning(f"Failed to check video stream: {e}")
             return False
+
+    def _publish_completion_event(
+        self,
+        video_url: str,
+        result: dict[str, Any],
+    ) -> None:
+        """Publish a normalized completion event for external adapters."""
+        if not self.event_bus:
+            return
+
+        payload = self._build_publish_payload(video_url=video_url, result=result)
+        self.event_bus.publish(
+            Event(
+                event_type=EventType.VIDEO_SUMMARIZED,
+                source=self.name,
+                data={
+                    "module": self.name,
+                    "source_url": video_url,
+                    "result": result,
+                    "publish_payload": payload.model_dump(mode="json"),
+                },
+            )
+        )
+
+    def _build_publish_payload(
+        self,
+        video_url: str,
+        result: dict[str, Any],
+    ) -> PublishPayload:
+        """Map module output to a normalized publishing payload."""
+        video_info = result.get("video_info", {})
+        summary_data = result.get("summary", {})
+        summary_text = (
+            summary_data.get("summary")
+            or summary_data.get("content")
+            or summary_data.get("overview")
+            or ""
+        )
+        key_points = summary_data.get("key_points", [])
+        knowledge_points = summary_data.get("knowledge", [])
+
+        blocks = [
+            PublishBlock(type="heading", text="摘要", level=2),
+            PublishBlock(type="paragraph", text=summary_text),
+        ]
+        if key_points:
+            blocks.append(PublishBlock(type="heading", text="关键观点", level=2))
+            blocks.append(PublishBlock(type="bullet_list", items=[str(item) for item in key_points]))
+        if knowledge_points:
+            blocks.append(PublishBlock(type="heading", text="知识点", level=2))
+            blocks.append(
+                PublishBlock(type="bullet_list", items=[str(item) for item in knowledge_points])
+            )
+
+        return PublishPayload(
+            module=self.name,
+            title=str(video_info.get("title", "Untitled Video Summary")),
+            summary=summary_text or None,
+            source_url=video_url,
+            blocks=blocks,
+            tags=[str(video_info.get("platform", "video"))],
+            metadata={
+                "uploader": video_info.get("uploader", ""),
+                "duration": video_info.get("duration", 0),
+                "output_paths": {
+                    key: str(value) for key, value in result.get("output_paths", {}).items()
+                },
+            },
+        )
 
     def _find_cover_image(
         self, video_path: Path, download_dir: Path | None = None, video_title: str | None = None

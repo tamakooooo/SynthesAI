@@ -18,7 +18,7 @@ from learning_assistant.server.config import ServerConfig, load_server_config
 from learning_assistant.server.context import ServerContext
 from learning_assistant.server.middleware import APIKeyMiddleware
 from learning_assistant.server.task_manager import TaskManager
-from learning_assistant.server.routes import system, query, link, vocabulary, video, llm, auth
+from learning_assistant.server.routes import auth, configuration, link, llm, query, system, video, vocabulary
 from learning_assistant.api.exceptions import LearningAssistantError
 
 
@@ -86,6 +86,7 @@ app.include_router(vocabulary.router)
 app.include_router(video.router)
 app.include_router(llm.router)
 app.include_router(auth.router)
+app.include_router(configuration.router)
 
 
 # Exception handlers

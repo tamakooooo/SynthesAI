@@ -15,10 +15,11 @@ from typing import Any
 from loguru import logger
 
 from learning_assistant.core.base_module import BaseModule
-from learning_assistant.core.event_bus import EventBus
+from learning_assistant.core.event_bus import Event, EventBus, EventType
 from learning_assistant.core.exporters import MarkdownExporter
 from learning_assistant.core.history_manager import HistoryManager
 from learning_assistant.core.llm.service import LLMService
+from learning_assistant.core.publishing import PublishBlock, PublishPayload
 from learning_assistant.core.prompt_manager import PromptManager
 from learning_assistant.modules.vocabulary.models import (
     VocabularyCard,
@@ -323,6 +324,11 @@ class VocabularyLearningModule(BaseModule):
                 f"Processing completed: {len(vocabulary_cards)} words extracted"
             )
 
+            self._publish_completion_event(
+                source_url=url,
+                source_text=content,
+                output=output,
+            )
             return output
 
         except Exception as e:
@@ -512,3 +518,72 @@ class VocabularyLearningModule(BaseModule):
             result["source_url"] = url
 
         return result
+
+    def _publish_completion_event(
+        self,
+        source_url: str | None,
+        source_text: str | None,
+        output: VocabularyOutput,
+    ) -> None:
+        """Publish normalized completion event for adapters."""
+        if not self.event_bus:
+            return
+
+        payload = self._build_publish_payload(source_url, source_text, output)
+        self.event_bus.publish(
+            Event(
+                event_type=EventType.VOCABULARY_EXTRACTED,
+                source=self.name,
+                data={
+                    "module": self.name,
+                    "source_url": source_url,
+                    "result": output.to_dict(),
+                    "publish_payload": payload.model_dump(mode="json"),
+                },
+            )
+        )
+
+    def _build_publish_payload(
+        self,
+        source_url: str | None,
+        source_text: str | None,
+        output: VocabularyOutput,
+    ) -> PublishPayload:
+        """Map vocabulary output to normalized publishing payload."""
+        words = [
+            f"{card.word} ({card.part_of_speech}) - {card.definition.zh}"
+            for card in output.vocabulary_cards
+        ]
+        story_summary = output.context_story.content if output.context_story else None
+        title = "Vocabulary Extraction"
+        if source_url:
+            title = f"Vocabulary | {source_url}"
+
+        blocks = [PublishBlock(type="heading", text="词汇列表", level=2)]
+        if words:
+            blocks.append(PublishBlock(type="bullet_list", items=words))
+        if story_summary:
+            blocks.append(PublishBlock(type="heading", text="上下文故事", level=2))
+            blocks.append(PublishBlock(type="paragraph", text=story_summary))
+
+        summary = (
+            f"Extracted {len(output.vocabulary_cards)} vocabulary items."
+            if output.vocabulary_cards
+            else "No vocabulary extracted."
+        )
+
+        return PublishPayload(
+            module=self.name,
+            title=title,
+            summary=summary,
+            source_url=source_url,
+            blocks=blocks,
+            tags=["vocabulary"],
+            metadata={
+                "source_preview": (source_text or "")[:120],
+                "total_words": output.statistics.get("total_words", 0),
+                "difficulty_distribution": output.statistics.get(
+                    "difficulty_distribution", {}
+                ),
+            },
+        )

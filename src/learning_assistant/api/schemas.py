@@ -63,12 +63,22 @@ class SkillInfo(BaseModel):
         description: 技能描述
         version: 版本号
         status: 状态（available/disabled/error）
+        type: 技能类型（module/adapter）
+        enabled: 当前配置是否启用
+        loaded: 当前进程是否已加载
+        priority: 当前配置优先级
+        actions: 适合 agent 消费的能力动作列表
     """
 
     name: str = Field(description="技能名称")
     description: str = Field(description="技能描述")
     version: str = Field(description="版本号")
     status: str = Field(description="状态（available/disabled/error）")
+    type: str = Field(default="module", description="技能类型（module/adapter）")
+    enabled: bool = Field(default=True, description="当前配置是否启用")
+    loaded: bool = Field(default=False, description="当前进程是否已加载")
+    priority: int | None = Field(default=None, description="当前配置优先级")
+    actions: list[str] = Field(default_factory=list, description="技能支持的动作列表")
 
 
 class HistoryRecord(BaseModel):
