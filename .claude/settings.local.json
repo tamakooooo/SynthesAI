@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(python -m pytest tests/modules/test_video_summary_module.py -v --tb=short)",
+      "Bash(py -m pytest tests/modules/test_video_summary_module.py -v --tb=short)",
+      "PowerShell(python -m pytest tests/modules/test_video_summary_module.py -v --tb=short 2>&1)"
     ]
   }
 }

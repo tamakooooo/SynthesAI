@@ -1,5 +1,6 @@
-# Learning Assistant - Adapter Configuration
-# Version: 0.1.0
+# SynthesAI - Adapter Configuration
+# Production adapters development has been discontinued.
+# This file contains only the event bus configuration for the adapter system.
 
 # Adapter Configuration
 adapters:
@@ -17,24 +18,7 @@ adapters:
       overwrite_strategy: "create_new"
       title_template: "{module} | {title}"
 
-  # Test Adapter (for validation)
-  test_validation:
-    enabled: false
-    priority: 1
-
-    config:
-      # Test settings
-      simulate_errors: false
-      delay_seconds: 0
-
-    cli:
-      command_name: "test"
-      description: "Test adapter for validation"
-
-  # Adapter framework is maintained for testing purposes only
-  # Production adapters development has been discontinued
-
-# Event Bus Configuration
+# Event Bus Configuration for Adapter System
 event_bus:
   enabled: true
 
@@ -42,15 +26,10 @@ event_bus:
   subscriptions:
     feishu:
       - "video.summarized"
-    # Test adapter can subscribe to events for testing
-    test_validation:
-      - "video.summarized"
 
   # Event retry policy
   retry:
-    # Maximum retries
     max_retries: 3
-    # Retry delay in seconds
     delay: 5
     # Exponential backoff
     exponential: true

@@ -59,9 +59,12 @@ class DeepSeekProvider(BaseLLMProvider):
         """
         logger.debug(f"Calling DeepSeek API with prompt length: {len(prompt)}")
 
+        # Merge initialization kwargs with call kwargs (call kwargs take precedence)
+        merged_kwargs = {**self.kwargs, **kwargs}
+
         # Extract parameters
-        temperature = kwargs.get("temperature", 0.7)
-        max_tokens = kwargs.get("max_tokens", 2000)
+        temperature = merged_kwargs.get("temperature", 0.7)
+        max_tokens = merged_kwargs.get("max_tokens", 2000)
 
         # Call DeepSeek API (OpenAI-compatible)
         response = self.client.chat.completions.create(

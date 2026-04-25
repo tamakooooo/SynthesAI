@@ -666,3 +666,24 @@ class AgentAPI:
         except Exception as e:
             logger.error(f"Failed to get statistics: {e}")
             raise
+
+
+# ── Singleton ──────────────────────────────────────────────
+_api_instance: AgentAPI | None = None
+
+
+def get_api() -> AgentAPI:
+    """Return a cached AgentAPI instance.
+
+    Avoids reinitializing ConfigManager, PluginManager, etc. on every call.
+    """
+    global _api_instance
+    if _api_instance is None:
+        _api_instance = AgentAPI()
+    return _api_instance
+
+
+def reset_api() -> None:
+    """Reset the cached instance (useful for tests or config changes)."""
+    global _api_instance
+    _api_instance = None

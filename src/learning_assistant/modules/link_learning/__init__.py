@@ -5,6 +5,7 @@ This module provides web content analysis and knowledge card generation.
 """
 
 import asyncio
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,12 +20,10 @@ from learning_assistant.core.history_manager import HistoryManager
 from learning_assistant.core.llm.service import LLMService
 from learning_assistant.core.publishing import PublishBlock, PublishPayload
 from learning_assistant.core.prompt_manager import PromptManager
-from learning_assistant.modules.link_learning.content_fetcher import ContentFetcher
-from learning_assistant.modules.link_learning.content_parser import ContentParser
+from learning_assistant.core.services import ContentFetcher, ContentParser
 from learning_assistant.modules.link_learning.models import (
     KeyConcept,
     KnowledgeCard,
-    LinkContent,
 )
 
 
@@ -79,55 +78,14 @@ class LinkLearningModule(BaseModule):
 
     def _init_components(self) -> None:
         """Initialize all components."""
-        import os
-
         from learning_assistant.core.config_manager import ConfigManager
 
         # LLM service (must be initialized first for PromptManager)
-        llm_config = self.config.get("llm", {})
-        provider = llm_config.get("provider", "openai")
-
-        # Get API key with priority: env var > config file > global settings
-        api_key = None
-        api_key_env = f"{provider.upper()}_API_KEY"
-
-        # 1. Try environment variable first (highest priority)
-        api_key = os.environ.get(api_key_env)
-
-        # 2. Try module config file
-        if not api_key and "api_key" in llm_config:
-            api_key = llm_config["api_key"]
-
-        # 3. Try global settings via ConfigManager
-        if not api_key:
-            try:
-                config_manager = ConfigManager()
-                config_manager.load_all()
-                global_llm_config = config_manager.get_llm_config(provider)
-                api_key = global_llm_config.get("api_key")
-            except Exception as e:
-                logger.debug(f"Failed to get API key from global config: {e}")
-
-        if not api_key:
-            raise ValueError(
-                f"API key not found. Set {api_key_env} environment variable, "
-                f"add 'api_key' to link_learning.llm config, "
-                f"or configure it in settings.local.yaml"
-            )
-
-        # Build LLM kwargs with base_url from config
-        llm_kwargs = {}
-        if "base_url" in llm_config:
-            llm_kwargs["base_url"] = llm_config["base_url"]
-        if "timeout" in llm_config:
-            llm_kwargs["timeout"] = llm_config["timeout"]
-
-        self.llm_service = LLMService(
-            provider=provider,
-            api_key=api_key,
-            model=llm_config.get("model", "kimi-k2.5"),
-            max_retries=llm_config.get("max_retries", 3),
-            **llm_kwargs,
+        config_manager = ConfigManager()
+        config_manager.load_all()
+        self.llm_service = config_manager.create_llm_service(
+            provider=self.config.get("llm", {}).get("provider"),
+            module_config=self.config,
         )
 
         # Content fetcher
@@ -152,7 +110,8 @@ class LinkLearningModule(BaseModule):
         )
 
         # Prompt manager (requires llm_service)
-        template_dirs = [Path("templates/prompts")]
+        path_config = config_manager.get_path_config()
+        template_dirs = [Path(path_config.templates_prompts)]
         self.prompt_manager = PromptManager(
             template_dirs=template_dirs,
             llm_service=self.llm_service,
@@ -161,7 +120,7 @@ class LinkLearningModule(BaseModule):
         # Exporter
         output_config = self.config.get("output", {})
         self.exporter = MarkdownExporter(
-            template_dir=Path("templates/outputs"),
+            template_dir=Path(path_config.templates_outputs),
             template_name="link_summary.md",
         )
 
@@ -174,7 +133,7 @@ class LinkLearningModule(BaseModule):
 
         # History manager
         self.history_manager = HistoryManager(
-            history_dir=Path("data/history/link"),
+            history_dir=Path(path_config.data_history_link),
         )
 
         logger.debug("All components initialized")
@@ -241,31 +200,18 @@ class LinkLearningModule(BaseModule):
             Knowledge card
         """
 
-        # Load prompt template
-        template = self.prompt_manager.load_template("link_summary")
-
-        # Fill template variables
-        system_prompt, user_prompt = template.render(
-            {
+        # Execute prompt template (uses prompt_manager.execute for consistency)
+        card_data = self.prompt_manager.execute(
+            template_name="link_summary",
+            variables={
                 "title": link_content.title,
                 "source": link_content.source,
                 "word_count": link_content.word_count,
                 "content": link_content.content,
-            }
+            },
+            include_examples=True,
+            validate_output=True,
         )
-
-        # Call LLM (synchronous call wrapped in async)
-        llm_config = self.config.get("llm", {})
-        response = await asyncio.to_thread(
-            self.llm_service.call,
-            prompt=user_prompt,
-            model=llm_config.get("model", "kimi-k2.5"),
-            temperature=llm_config.get("temperature", 0.3),
-            max_tokens=llm_config.get("max_tokens", 2000),
-        )
-
-        # Parse JSON response
-        card_data = self._parse_llm_response(response.content)
 
         # Convert key_concepts to objects
         key_concepts = [
@@ -292,44 +238,6 @@ class LinkLearningModule(BaseModule):
         )
 
         return knowledge_card
-
-    def _parse_llm_response(self, response: str) -> dict[str, Any]:
-        """
-        Parse LLM JSON response.
-
-        Args:
-            response: LLM response string
-
-        Returns:
-            Parsed dictionary
-
-        Raises:
-            ValueError: If JSON parsing fails
-        """
-        import json
-
-        try:
-            # Extract JSON from response (handle markdown code blocks)
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                json_str = response.split("```")[1].split("```")[0].strip()
-            else:
-                json_str = response.strip()
-
-            data = json.loads(json_str)
-
-            # Validate required fields
-            required_fields = ["summary", "key_points", "key_concepts", "tags", "difficulty"]
-            for field in required_fields:
-                if field not in data:
-                    raise ValueError(f"Missing required field: {field}")
-
-            return data
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            raise ValueError(f"Invalid JSON response: {e}") from e
 
     def _estimate_reading_time(self, word_count: int) -> str:
         """
@@ -377,8 +285,14 @@ class LinkLearningModule(BaseModule):
         Args:
             knowledge_card: Knowledge card to export
         """
+        from learning_assistant.core.config_manager import ConfigManager
+
+        # Get path config
+        config_manager = ConfigManager()
+        path_config = config_manager.get_path_config()
+
         # Export to Markdown
-        output_dir = Path("data/outputs/link")
+        output_dir = Path(path_config.data_outputs_link)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Sanitize title for filename
@@ -475,8 +389,16 @@ class LinkLearningModule(BaseModule):
         if not url:
             raise ValueError("URL is required")
 
-        # Run async process in event loop
-        knowledge_card = asyncio.run(self.process(url))
+        # Run async process in event loop (handle both cases)
+        try:
+            asyncio.get_running_loop()
+            # Already running loop - use thread pool to avoid conflict
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, self.process(url))
+                knowledge_card = future.result()
+        except RuntimeError:
+            # No event loop running - use asyncio.run directly
+            knowledge_card = asyncio.run(self.process(url))
 
         # Return as dict
         return knowledge_card.to_dict()
@@ -540,3 +462,20 @@ class LinkLearningModule(BaseModule):
                 "difficulty": knowledge_card.difficulty,
             },
         )
+
+    async def execute_async(self, input_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Execute link learning workflow (async).
+
+        Args:
+            input_data: Input data containing URL
+
+        Returns:
+            Knowledge card as dict
+        """
+        url = input_data.get("url")
+        if not url:
+            raise ValueError("URL is required")
+
+        knowledge_card = await self.process(url)
+        return knowledge_card.to_dict()

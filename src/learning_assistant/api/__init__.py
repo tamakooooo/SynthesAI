@@ -15,7 +15,7 @@ Learning Assistant Agent API.
     print(result["summary"])
 """
 
-from learning_assistant.api.agent_api import AgentAPI
+from learning_assistant.api.agent_api import AgentAPI, get_api, reset_api
 from learning_assistant.api.convenience import (
     summarize_video,
     list_available_skills,
@@ -28,9 +28,18 @@ from learning_assistant.api.convenience import (
     get_shared_api,
     reset_shared_api,
 )
+from learning_assistant.api.helpers import (
+    detect_content_type,
+    get_platform,
+    is_video_url,
+    is_article_url,
+    suggest_module,
+)
 
 __all__ = [
     "AgentAPI",
+    "get_api",
+    "reset_api",
     "summarize_video",
     "list_available_skills",
     "get_recent_history",
@@ -41,4 +50,9 @@ __all__ = [
     "extract_vocabulary_sync",
     "get_shared_api",
     "reset_shared_api",
+    "detect_content_type",
+    "get_platform",
+    "is_video_url",
+    "is_article_url",
+    "suggest_module",
 ]

@@ -7,7 +7,7 @@ and contextual story creation.
 """
 
 import asyncio
-import os
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,7 @@ from learning_assistant.core.history_manager import HistoryManager
 from learning_assistant.core.llm.service import LLMService
 from learning_assistant.core.publishing import PublishBlock, PublishPayload
 from learning_assistant.core.prompt_manager import PromptManager
+from learning_assistant.core.services import ContentFetcher, ContentParser
 from learning_assistant.modules.vocabulary.models import (
     VocabularyCard,
     VocabularyOutput,
@@ -30,9 +31,6 @@ from learning_assistant.modules.vocabulary.word_extractor import WordExtractor
 from learning_assistant.modules.vocabulary.phonetic_lookup import PhoneticLookup
 from learning_assistant.modules.vocabulary.story_generator import StoryGenerator
 from learning_assistant.modules.vocabulary.vocabulary_card_generator import VocabularyCardGenerator
-from learning_assistant.modules.vocabulary.story_generator import StoryGenerator
-from learning_assistant.modules.link_learning.content_fetcher import ContentFetcher
-from learning_assistant.modules.link_learning.content_parser import ContentParser
 
 
 class VocabularyLearningModule(BaseModule):
@@ -92,55 +90,18 @@ class VocabularyLearningModule(BaseModule):
         """Initialize all components."""
         from learning_assistant.core.config_manager import ConfigManager
 
+        config_manager = ConfigManager()
+        config_manager.load_all()
+
         # LLM service (must be initialized first)
-        llm_config = self.config.get("llm", {})
-        provider = llm_config.get("provider", "openai")
-
-        # Get API key with priority: env var > config file > global settings
-        api_key = None
-        api_key_env = f"{provider.upper()}_API_KEY"
-
-        # 1. Try environment variable first (highest priority)
-        api_key = os.environ.get(api_key_env)
-
-        # 2. Try module config file
-        if not api_key and "api_key" in llm_config:
-            api_key = llm_config["api_key"]
-
-        # 3. Try global settings via ConfigManager
-        if not api_key:
-            try:
-                config_manager = ConfigManager()
-                config_manager.load_all()
-                global_llm_config = config_manager.get_llm_config(provider)
-                api_key = global_llm_config.get("api_key")
-            except Exception as e:
-                logger.debug(f"Failed to get API key from global config: {e}")
-
-        if not api_key:
-            raise ValueError(
-                f"API key not found. Set {api_key_env} environment variable, "
-                f"add 'api_key' to vocabulary.llm config, "
-                f"or configure it in settings.local.yaml"
-            )
-
-        # Build LLM kwargs with base_url from config
-        llm_kwargs = {}
-        if "base_url" in llm_config:
-            llm_kwargs["base_url"] = llm_config["base_url"]
-        if "timeout" in llm_config:
-            llm_kwargs["timeout"] = llm_config["timeout"]
-
-        self.llm_service = LLMService(
-            provider=provider,
-            api_key=api_key,
-            model=llm_config.get("model", "gpt-4"),
-            max_retries=llm_config.get("max_retries", 3),
-            **llm_kwargs,
+        self.llm_service = config_manager.create_llm_service(
+            provider=self.config.get("llm", {}).get("provider"),
+            module_config=self.config,
         )
 
         # Prompt manager (requires llm_service)
-        template_dirs = [Path("templates/prompts")]
+        path_config = config_manager.get_path_config()
+        template_dirs = [Path(path_config.templates_prompts)]
         self.prompt_manager = PromptManager(
             template_dirs=template_dirs,
             llm_service=self.llm_service,
@@ -154,9 +115,7 @@ class VocabularyLearningModule(BaseModule):
 
         # Phonetic lookup
         phonetic_config = self.config.get("phonetic", {})
-        local_dict_path = Path(
-            phonetic_config.get("local_dictionary", "data/dictionaries/english.json")
-        )
+        local_dict_path = Path(path_config.data_dictionaries) / "english.json"
         api_url = phonetic_config.get(
             "api_url", "https://api.dictionaryapi.dev/api/v2/entries/en/"
         )
@@ -207,16 +166,15 @@ class VocabularyLearningModule(BaseModule):
             logger.debug("URL content fetching disabled")
 
         # Exporter
-        output_config = self.config.get("output", {})
         self.exporter = MarkdownExporter(
-            template_dir=Path("templates/outputs"),
+            template_dir=Path(path_config.templates_outputs),
             template_name="vocabulary_card.md",
         )
 
         # History manager
-        history_dir = Path(output_config.get("directory", "data/outputs/vocabulary"))
+        history_dir = Path(path_config.data_history_vocabulary)
         self.history_manager = HistoryManager(
-            history_dir=history_dir.parent / "history" / "vocabulary",
+            history_dir=history_dir,
         )
 
         logger.debug("All components initialized")
@@ -493,8 +451,19 @@ class VocabularyLearningModule(BaseModule):
         difficulty = input_data.get("difficulty", "intermediate")
         generate_story = input_data.get("generate_story", True)
 
-        # Run async process in event loop
-        output = asyncio.run(
+        # Run async process in event loop (handle both cases)
+        def run_async(coro):
+            try:
+                asyncio.get_running_loop()
+                # Already running loop - use thread pool
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, coro)
+                    return future.result()
+            except RuntimeError:
+                # No event loop running - use asyncio.run directly
+                return asyncio.run(coro)
+
+        output = run_async(
             self.process(
                 content=content,
                 url=url,
@@ -506,7 +475,50 @@ class VocabularyLearningModule(BaseModule):
 
         # Export and save
         source = url if url else content[:200]
-        files = asyncio.run(self._export_and_save(output, source))
+        files = run_async(self._export_and_save(output, source))
+
+        # Return as dict
+        result = output.to_dict()
+        result["files"] = files
+        result["status"] = "success"
+        result["timestamp"] = datetime.now().isoformat()
+
+        if url:
+            result["source_url"] = url
+
+        return result
+
+    async def execute_async(self, input_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Execute vocabulary learning workflow (async).
+
+        Args:
+            input_data: Input data containing content or url
+
+        Returns:
+            Vocabulary output as dict
+        """
+        content = input_data.get("content") or input_data.get("text")
+        url = input_data.get("url")
+
+        if not content and not url:
+            raise ValueError("Content/text or URL is required")
+
+        word_count = input_data.get("word_count", 10)
+        difficulty = input_data.get("difficulty", "intermediate")
+        generate_story = input_data.get("generate_story", True)
+
+        output = await self.process(
+            content=content,
+            url=url,
+            word_count=word_count,
+            difficulty=difficulty,
+            generate_story=generate_story,
+        )
+
+        # Export and save
+        source = url if url else content[:200]
+        files = await self._export_and_save(output, source)
 
         # Return as dict
         result = output.to_dict()

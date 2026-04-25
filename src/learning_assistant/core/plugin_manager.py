@@ -416,6 +416,8 @@ class PluginManager:
         Returns:
             PluginMetadata or None if not a plugin
         """
+        spec = None
+        module_added = False
         try:
             # Load module
             spec = importlib.util.spec_from_file_location(
@@ -426,6 +428,7 @@ class PluginManager:
 
             module = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = module
+            module_added = True
             spec.loader.exec_module(module)
 
             # Look for plugin classes
@@ -469,20 +472,19 @@ class PluginManager:
                         module_name=py_file.stem,
                     )
 
-                    # Clean up temp module
-                    if spec.name in sys.modules:
-                        del sys.modules[spec.name]
-
                     return metadata
 
             # No plugin class found
-            if spec.name in sys.modules:
-                del sys.modules[spec.name]
             return None
 
         except Exception as e:
             logger.debug(f"Failed to auto-discover from {py_file}: {e}")
             return None
+
+        finally:
+            # Clean up temp module from sys.modules in all cases
+            if module_added and spec is not None and spec.name in sys.modules:
+                del sys.modules[spec.name]
 
     def _load_plugin_class(
         self, metadata: PluginMetadata

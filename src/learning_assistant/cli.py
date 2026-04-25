@@ -4,9 +4,11 @@ SynthesAI CLI Entry Point.
 SynthesAI - Synthesize Knowledge with AI Intelligence
 """
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import typer
 from rich.console import Console
@@ -31,6 +33,19 @@ app.add_typer(auth_app, name="auth")
 
 # Create Rich console for beautiful output
 console = Console()
+
+
+def _validate_url(url: str, label: str = "URL") -> None:
+    """Validate URL format before processing."""
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        console.print(f"[red]Error: Invalid {label} format: {url}[/red]")
+        raise typer.Exit(code=1)
+    if parsed.scheme not in ("http", "https"):
+        console.print(
+            f"[red]Error: {label} must use http or https scheme: {url}[/red]"
+        )
+        raise typer.Exit(code=1)
 
 
 class AppState:
@@ -380,6 +395,7 @@ def link(
 
     from learning_assistant.modules.link_learning import LinkLearningModule
 
+    _validate_url(url, "URL")
     console.print(f"[bold blue]Processing web link:[/bold blue] {url}")
 
     try:
@@ -551,10 +567,10 @@ def vocabulary(
 
     if url:
         # Fetch content from URL
+        _validate_url(url, "URL")
         console.print(f"[bold blue]Fetching content from URL:[/bold blue] {url}")
         try:
-            from learning_assistant.modules.link_learning.content_fetcher import ContentFetcher
-            from learning_assistant.modules.link_learning.content_parser import ContentParser
+            from learning_assistant.core.services import ContentFetcher, ContentParser
             import asyncio as aio
 
             fetcher = ContentFetcher(timeout=30, max_retries=3)
@@ -816,6 +832,7 @@ def video(
 
     from learning_assistant.modules.video_summary import VideoSummaryModule
 
+    _validate_url(url, "URL")
     console.print(f"[bold blue]Processing video:[/bold blue] {url}")
 
     try:

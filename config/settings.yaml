@@ -1,10 +1,10 @@
 # Learning Assistant - Global Settings
-# Version: 0.1.0
+# Version: 0.3.0
 
 # Application Settings
 app:
   name: "Learning Assistant"
-  version: "0.1.0"
+  version: "0.3.0"
   log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_file: "logs/learning_assistant.log"
 

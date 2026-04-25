@@ -140,8 +140,8 @@ class LLMService:
                 # Wait before retrying
                 time.sleep(delay)
 
-        # This should never be reached, but raise exception for safety
-        raise Exception("LLM call failed after all retries")
+        # This should never be reached, but raise RuntimeError for safety
+        raise RuntimeError(f"LLM call failed after {self.max_retries + 1} retries")
 
     def validate_api_key(self) -> bool:
         """

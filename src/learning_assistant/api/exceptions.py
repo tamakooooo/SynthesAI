@@ -30,6 +30,10 @@ class LearningAssistantError(Exception):
     所有 Learning Assistant 异常的基类。
     """
 
+    is_retryable: bool = False
+    retry_after: int | None = None
+    retry_suggestion: str | None = None
+
     def to_http_status(self) -> int:
         """Return corresponding HTTP status code for this exception."""
         return 500
@@ -40,12 +44,9 @@ class SkillNotFoundError(LearningAssistantError):
     技能不存在.
 
     当请求的技能名称不存在时抛出。
-
-    Example:
-        >>> api = AgentAPI()
-        >>> module = api.plugin_manager.get_module("non-existent-skill")
-        SkillNotFoundError: Skill 'non-existent-skill' not found
     """
+
+    is_retryable = False
 
     def to_http_status(self) -> int:
         """Return HTTP 404 Not Found."""
@@ -57,17 +58,9 @@ class VideoNotFoundError(LearningAssistantError):
     视频不存在.
 
     当视频 URL 无效或视频已删除时抛出。
-
-    可能原因：
-    - URL 格式错误
-    - 视频已删除
-    - 地区限制
-    - 需要登录
-
-    Example:
-        >>> await summarize_video(url="https://invalid-url")
-        VideoNotFoundError: Video not found at https://invalid-url
     """
+
+    is_retryable = False
 
     def to_http_status(self) -> int:
         """Return HTTP 404 Not Found."""
@@ -85,16 +78,12 @@ class VideoDownloadError(LearningAssistantError):
     - 平台反爬虫机制
     - 需要登录（Cookie）
 
-    Example:
-        >>> await summarize_video(url="https://...")
-        VideoDownloadError: Failed to download video: HTTP 403 Forbidden
-
-    解决方法：
-        >>> result = await summarize_video(
-        ...     url="https://...",
-        ...     cookie_file="data/cookies/bilibili.txt"
-        ... )
+    解决方法：等待几秒后重试，或使用 cookie_file 参数。
     """
+
+    is_retryable = True
+    retry_after = 5
+    retry_suggestion = "等待 5 秒后重试，或使用 cookie_file 参数"
 
     def to_http_status(self) -> int:
         """Return HTTP 502 Bad Gateway."""
@@ -109,18 +98,15 @@ class TranscriptionError(LearningAssistantError):
 
     可能原因：
     - BcutASR 服务不可用
-    - 音频质量问题（噪音太大）
-    - 音频过长
+    - 音频质量问题
     - 频率限制
 
-    Example:
-        >>> await summarize_video(url="https://...")
-        TranscriptionError: Transcription failed: Rate limit exceeded
-
-    解决方法：
-        - 等待几分钟后重试
-        - 选择音频清晰的视频
+    解决方法：等待几分钟后重试。
     """
+
+    is_retryable = True
+    retry_after = 3
+    retry_suggestion = "等待 3 秒后重试，或检查音频质量"
 
     def to_http_status(self) -> int:
         """Return HTTP 503 Service Unavailable."""
@@ -139,15 +125,21 @@ class LLMAPIError(LearningAssistantError):
     - 网络问题
     - 模型不可用
 
-    Example:
-        >>> await summarize_video(url="https://...")
-        LLMAPIError: OpenAI API error: Invalid API key
-
     解决方法：
-        - 检查 API Key 配置：export OPENAI_API_KEY="sk-..."
-        - 等待限流恢复
-        - 使用其他 LLM 提供商
+    - 检查 API Key 配置
+    - 等待限流恢复
+    - 使用其他 LLM 提供商
     """
+
+    def __init__(self, message: str, is_rate_limit: bool = False):
+        super().__init__(message)
+        self.is_rate_limit = is_rate_limit
+        if is_rate_limit:
+            self.is_retryable = True
+            self.retry_after = 60
+            self.retry_suggestion = "API 限流，等待 60 秒后重试"
+        else:
+            self.is_retryable = False
 
     def to_http_status(self) -> int:
         """Return HTTP 502 Bad Gateway."""
@@ -155,11 +147,12 @@ class LLMAPIError(LearningAssistantError):
 
 
 class ConfigError(LearningAssistantError):
-    """
-    配置错误.
+    """配置错误。
 
     当配置文件格式错误或必需配置缺失时抛出。
     """
+
+    is_retryable = False
 
     def to_http_status(self) -> int:
         """Return HTTP 500 Internal Server Error."""
@@ -167,11 +160,12 @@ class ConfigError(LearningAssistantError):
 
 
 class HistoryError(LearningAssistantError):
-    """
-    历史记录错误.
+    """历史记录错误。
 
     当读取或写入历史记录时出现错误时抛出。
     """
+
+    is_retryable = False
 
     def to_http_status(self) -> int:
         """Return HTTP 500 Internal Server Error."""

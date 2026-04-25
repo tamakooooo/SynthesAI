@@ -31,7 +31,7 @@ from typing import Any
 
 from loguru import logger
 
-from learning_assistant.api.agent_api import AgentAPI
+from learning_assistant.api.agent_api import AgentAPI, get_api
 from learning_assistant.api.schemas import (
     VideoSummaryResult,
     LinkSummaryResult,
@@ -127,7 +127,7 @@ async def summarize_video(url: str, **options: Any) -> dict[str, Any]:
     """
     logger.info(f"Quick video summary: {url}")
 
-    api = AgentAPI()
+    api = get_api()
     result: VideoSummaryResult = await api.summarize_video(url=url, **options)
 
     return result.model_dump()
@@ -156,7 +156,7 @@ def list_available_skills() -> list[dict[str, Any]]:
     """
     logger.debug("Quick list skills")
 
-    api = AgentAPI()
+    api = get_api()
     skills = api.list_skills()
 
     return [skill.model_dump() for skill in skills]
@@ -187,7 +187,7 @@ def get_recent_history(limit: int = 10) -> list[dict[str, Any]]:
     """
     logger.debug(f"Quick get history: limit={limit}")
 
-    api = AgentAPI()
+    api = get_api()
     records = api.get_history(limit=limit)
 
     return [record.model_dump() for record in records]
@@ -212,7 +212,7 @@ def search_history(search: str, limit: int = 10) -> list[dict[str, Any]]:
     """
     logger.debug(f"Quick search history: search={search}")
 
-    api = AgentAPI()
+    api = get_api()
     records = api.get_history(limit=limit, search=search)
 
     return [record.model_dump() for record in records]
@@ -238,7 +238,7 @@ def get_statistics() -> dict[str, Any]:
     """
     logger.debug("Quick get statistics")
 
-    api = AgentAPI()
+    api = get_api()
     stats = api.get_statistics()
 
     return stats.model_dump()
@@ -321,7 +321,7 @@ async def process_link(url: str, **options: Any) -> dict[str, Any]:
     """
     logger.info(f"Quick link processing: {url}")
 
-    api = AgentAPI()
+    api = get_api()
     result: LinkSummaryResult = await api.process_link(url=url, **options)
 
     return result.model_dump()
@@ -407,7 +407,7 @@ async def extract_vocabulary(
     """
     logger.info(f"Quick vocabulary extraction: {word_count} words")
 
-    api = AgentAPI()
+    api = get_api()
     result: VocabularyResult = await api.extract_vocabulary(
         content=content,
         word_count=word_count,

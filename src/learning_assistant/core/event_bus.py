@@ -187,7 +187,7 @@ class EventBus:
                     tasks.append(handler(event))
                 else:
                     # Run sync handler in executor to avoid blocking
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     tasks.append(loop.run_in_executor(None, handler, event))
             except Exception as e:
                 handler_name = getattr(handler, "__name__", str(handler))

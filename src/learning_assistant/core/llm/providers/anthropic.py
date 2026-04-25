@@ -59,9 +59,12 @@ class AnthropicProvider(BaseLLMProvider):
         """
         logger.debug(f"Calling Anthropic API with prompt length: {len(prompt)}")
 
+        # Merge initialization kwargs with call kwargs (call kwargs take precedence)
+        merged_kwargs = {**self.kwargs, **kwargs}
+
         # Extract parameters (Anthropic requires max_tokens)
-        temperature = kwargs.get("temperature", 0.7)
-        max_tokens = kwargs.get("max_tokens", 2000)
+        temperature = merged_kwargs.get("temperature", 0.7)
+        max_tokens = merged_kwargs.get("max_tokens", 2000)
 
         # Call Anthropic API
         response = self.client.messages.create(

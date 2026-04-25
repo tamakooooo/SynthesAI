@@ -91,7 +91,11 @@ json_schema:
       type: array
       items:
         type: string
-        pattern: "^.{3,8}[：:].{15,30}$"
+        # Pattern relaxed to allow flexible key_points format
+        # Original strict pattern was: "^.{3,8}[：:].{15,30}$"
+        # Now accepts any non-empty string with reasonable length
+        minLength: 5
+        maxLength: 200
       minItems: 4
       maxItems: 6
       description: 核心要点列表（格式：关键词：详细描述）

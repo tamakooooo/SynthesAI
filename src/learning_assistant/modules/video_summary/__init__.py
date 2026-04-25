@@ -75,50 +75,23 @@ class VideoSummaryModule(BaseModule):
 
     def _init_components(self) -> None:
         """Initialize all components."""
-        import os
+        from learning_assistant.core.config_manager import ConfigManager
+
+        config_manager = ConfigManager()
+        config_manager.load_all()
+        path_config = config_manager.get_path_config()
 
         # LLM service (must be initialized first for PromptManager)
-        llm_config = self.config.get("llm", {})
-        provider = llm_config.get("provider", "openai")
-
-        # Get API key with priority: env var > config file
-        api_key = None
-        api_key_env = f"{provider.upper()}_API_KEY"
-
-        # 1. Try environment variable first
-        api_key = os.environ.get(api_key_env)
-
-        # 2. Try config file
-        if not api_key and "api_key" in llm_config:
-            api_key = llm_config["api_key"]
-
-        if not api_key:
-            raise ValueError(
-                f"API key not found. Set {api_key_env} environment variable "
-                f"or add 'api_key' to video_summary.llm config"
-            )
-
-        # Build LLM kwargs with base_url from config
-        llm_kwargs = {}
-        if "base_url" in llm_config:
-            llm_kwargs["base_url"] = llm_config["base_url"]
-        if "timeout" in llm_config:
-            llm_kwargs["timeout"] = llm_config["timeout"]
-
-        self.llm_service = LLMService(
-            provider=provider,
-            api_key=api_key,
-            model=llm_config.get("model", "kimi-k2.5"),
-            max_retries=llm_config.get("max_retries", 3),
-            max_tokens=llm_config.get("max_tokens", 4000),
-            **llm_kwargs,
+        self.llm_service = config_manager.create_llm_service(
+            provider=self.config.get("llm", {}).get("provider"),
+            module_config=self.config,
         )
 
         # Video downloader
         # Auto-detect cookie file based on platform
         cookie_files_config = self.config.get("cookies", {})
         bilibili_cookie = cookie_files_config.get(
-            "bilibili", "config/cookies/bilibili_cookies.txt"
+            "bilibili", path_config.config_cookies_bilibili
         )
 
         # Check if cookie file exists
@@ -128,13 +101,13 @@ class VideoSummaryModule(BaseModule):
             cookie_file_path = None
 
         self.downloader = VideoDownloader(
-            output_dir=Path(self.config.get("download_dir", "data/downloads")),
+            output_dir=Path(self.config.get("download_dir", path_config.data_downloads)),
             cookie_file=cookie_file_path,
         )
 
         # Audio extractor
         self.audio_extractor = AudioExtractor(
-            output_dir=Path(self.config.get("audio_dir", "data/audio"))
+            output_dir=Path(self.config.get("audio_dir", path_config.data_audio))
         )
 
         # Audio transcriber
@@ -145,7 +118,7 @@ class VideoSummaryModule(BaseModule):
         )
 
         # Prompt manager (requires llm_service)
-        template_dirs = [Path("templates/prompts")]
+        template_dirs = [Path(path_config.templates_prompts)]
         self.prompt_manager = PromptManager(
             template_dirs=template_dirs,
             llm_service=self.llm_service,
@@ -153,7 +126,7 @@ class VideoSummaryModule(BaseModule):
 
         # Markdown exporter
         self.exporter = MarkdownExporter(
-            template_dir=Path("templates/outputs"),
+            template_dir=Path(path_config.templates_outputs),
             template_name=self.config.get("export_template", "video_summary.md"),
         )
 
@@ -162,7 +135,7 @@ class VideoSummaryModule(BaseModule):
         if frame_extraction_config.get("enabled", True):  # Default enabled
             self.frame_extractor = FrameExtractor(
                 output_dir=Path(
-                    frame_extraction_config.get("output_dir", "data/frames")
+                    frame_extraction_config.get("output_dir", path_config.data_frames)
                 ),
                 output_format=frame_extraction_config.get("format", "jpg"),
                 quality=frame_extraction_config.get("quality", 85),
@@ -428,10 +401,16 @@ class VideoSummaryModule(BaseModule):
         video_info: dict[str, Any],
     ) -> dict[str, Path]:
         """Export summary to output files."""
+        from learning_assistant.core.config_manager import ConfigManager
+
         if not self.exporter:
             raise RuntimeError("Exporter not initialized")
 
-        output_dir = Path("data/outputs/video")
+        # Get path config
+        config_manager = ConfigManager()
+        path_config = config_manager.get_path_config()
+
+        output_dir = Path(path_config.data_outputs_video)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate output filename from video title
@@ -622,6 +601,7 @@ class VideoSummaryModule(BaseModule):
     ) -> list[dict[str, Any]]:
         """Use cover image for all chapters."""
         import shutil
+        from learning_assistant.core.config_manager import ConfigManager
 
         # Create video-specific directory
         safe_title = self.frame_extractor._sanitize_title(video_title)
@@ -634,10 +614,14 @@ class VideoSummaryModule(BaseModule):
 
         logger.info(f"Copied cover image to {cover_dest}")
 
+        # Get output path from config
+        config_manager = ConfigManager()
+        path_config = config_manager.get_path_config()
+
         # Calculate relative path
         relative_path = self.frame_extractor._calculate_relative_path(
             frame_path=cover_dest,
-            output_dir=Path("data/outputs"),
+            output_dir=Path(path_config.data_outputs_video).parent,
         )
 
         # Add same cover path to all chapters

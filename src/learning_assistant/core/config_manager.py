@@ -151,7 +151,7 @@ class ConfigManager:
         # Convert to dict
         config_dict = provider_config.model_dump()
 
-        # Resolve API key with priority: env var > config file > None
+        # Resolve API key with priority: env var > ${ENV_VAR} syntax > config file > None
         api_key = None
 
         # 1. Try environment variable first (highest priority)
@@ -163,10 +163,25 @@ class ConfigManager:
                     f"API key for {provider} loaded from environment variable: {api_key_env}"
                 )
 
-        # 2. Try config file api_key field
+        # 2. Try config file api_key field (supports ${ENV_VAR} syntax)
         if not api_key and provider_config.api_key:
-            api_key = provider_config.api_key
-            logger.debug(f"API key for {provider} loaded from configuration file")
+            config_api_key = provider_config.api_key
+            # Check if it's an environment variable reference like "${OPENAI_API_KEY}"
+            if config_api_key.startswith("${") and config_api_key.endswith("}"):
+                env_var_name = config_api_key[2:-1]  # Extract variable name
+                api_key = os.environ.get(env_var_name)
+                if api_key:
+                    logger.debug(
+                        f"API key for {provider} loaded from ${env_var_name} reference"
+                    )
+                else:
+                    logger.warning(
+                        f"Environment variable {env_var_name} not set for API key"
+                    )
+            else:
+                # Direct API key value (not recommended but supported)
+                api_key = config_api_key
+                logger.debug(f"API key for {provider} loaded from configuration file")
 
         # 3. Set api_key in config dict
         if api_key:
@@ -184,6 +199,89 @@ class ConfigManager:
         )
 
         return config_dict
+
+    def get_path_config(self) -> PathConfig:
+        """
+        Get centralized path configuration.
+
+        Returns:
+            PathConfig object with all path settings
+        """
+        return PathConfig()
+
+    def create_llm_service(
+        self,
+        provider: str | None = None,
+        module_config: dict[str, Any] | None = None,
+    ) -> "LLMService":
+        """
+        Create LLMService with proper configuration priority.
+
+        Priority for API key and settings:
+        1. Module-specific config (if provided)
+        2. Global settings (settings.yaml)
+        3. Environment variables
+
+        Args:
+            provider: Provider name (openai, anthropic, deepseek)
+            module_config: Module-specific LLM configuration
+
+        Returns:
+            Configured LLMService instance
+
+        Raises:
+            ValueError: If API key not found
+        """
+        import os
+
+        from learning_assistant.core.llm.service import LLMService
+
+        module_llm_config = module_config.get("llm", {}) if module_config else {}
+        provider = provider or module_llm_config.get("provider", "openai")
+        if not self.settings_model:
+            self.load_all()
+
+        # Get global LLM config
+        global_llm_config = self.get_llm_config(provider)
+
+        # Build LLM kwargs with priority: module > global > env
+        api_key = None
+        api_key_env = f"{provider.upper()}_API_KEY"
+
+        # 1. Try environment variable first (highest priority)
+        api_key = os.environ.get(api_key_env)
+
+        # 2. Try module config
+        if not api_key and "api_key" in module_llm_config:
+            api_key = module_llm_config["api_key"]
+
+        # 3. Try global config
+        if not api_key and global_llm_config.get("api_key"):
+            api_key = global_llm_config["api_key"]
+
+        if not api_key:
+            raise ValueError(
+                f"API key not found for provider '{provider}'. "
+                f"Set {api_key_env} environment variable or add to config."
+            )
+
+        # Build kwargs with module overrides
+        llm_kwargs = {}
+        for key in ["base_url", "timeout", "max_retries", "max_tokens"]:
+            # Module config takes precedence
+            if key in module_llm_config:
+                llm_kwargs[key] = module_llm_config[key]
+            elif key in global_llm_config:
+                llm_kwargs[key] = global_llm_config[key]
+
+        model = module_llm_config.get("model", global_llm_config.get("default_model", "gpt-4"))
+
+        return LLMService(
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            **llm_kwargs,
+        )
 
     def get_plugin_config(self, plugin_name: str) -> dict[str, Any]:
         """
@@ -459,6 +557,26 @@ class Settings(BaseModel):
     plugin: PluginConfig = PluginConfig()
     performance: PerformanceConfig = PerformanceConfig()
     security: SecurityConfig = SecurityConfig()
+
+
+class PathConfig(BaseModel):
+    """Centralized path configuration for all directories."""
+
+    templates_prompts: str = "templates/prompts"
+    templates_outputs: str = "templates/outputs"
+    data_outputs_video: str = "data/outputs/video"
+    data_outputs_link: str = "data/outputs/link"
+    data_outputs_vocabulary: str = "data/outputs/vocabulary"
+    data_history: str = "data/history"
+    data_history_link: str = "data/history/link"
+    data_history_vocabulary: str = "data/history/vocabulary"
+    data_downloads: str = "data/downloads"
+    data_audio: str = "data/audio"
+    data_frames: str = "data/frames"
+    data_cache_asr: str = "data/cache/asr"
+    data_dictionaries: str = "data/dictionaries"
+    config_cookies: str = "config/cookies"
+    config_cookies_bilibili: str = "config/cookies/bilibili_cookies.txt"
 
 
 class ModuleConfig(BaseModel):
