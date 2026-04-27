@@ -76,6 +76,19 @@ output_schema:
             type: string
             description: Relative path to screenshot (filled by system, not LLM)
         required: [title, start_time, summary]
+    knowledge:
+      type: array
+      items:
+        type: object
+        properties:
+          knowledge:
+            type: string
+            description: Knowledge point description
+          category:
+            type: string
+            description: Knowledge category (e.g., "概念", "技能", "工具")
+        required: [knowledge]
+      description: Knowledge points extracted from video (for educational content)
     qa_items:
       type: array
       items:
@@ -123,7 +136,7 @@ output_schema:
                       description: Level 3 nodes (specific points)
           required: [topic]
       required: [root, children]
-  required: [title, summary, key_points, chapters, mindmap_structure]
+  required: [title, summary, key_points, chapters, qa_items, topics, mindmap_structure]
 
 # System prompt
 system_prompt: |
@@ -225,13 +238,17 @@ user_prompt: |
      - point（字符串）：详细的要点描述（包含具体信息，不只是概括）
      - importance（字符串）：重要性级别（high/medium/low）
 
-  5. **问答预判**（qa_items 字段，数组）：3-5个观众可能产生的疑问，每个问题对象包含：
+  5. **知识点提取**（knowledge 字段，数组）：从视频提取的知识点（如概念、技能、工具），每个知识点对象包含：
+     - knowledge（字符串）：知识点内容描述
+     - category（字符串，可选）：知识类别（如"概念"、"技能"、"工具"、"术语"）
+
+  6. **问答预判**（qa_items 字段，数组）：3-5个观众可能产生的疑问，每个问题对象包含：
      - question（字符串）：观众可能提出的问题
      - answer（字符串）：基于视频内容的准确解答
 
-  6. **主题标签**（topics 字段，数组）：5-10个相关主题标签
+  7. **主题标签**（topics 字段，数组）：5-10个相关主题标签
 
-  7. **思维导图结构**（mindmap_structure 字段，对象）：用于可视化展示，包含：
+  8. **思维导图结构**（mindmap_structure 字段，对象）：用于可视化展示，包含：
      - root（字符串）：根节点主题，使用视频标题或核心主题
      - children（数组）：3-6个一级节点，每个一级节点包含：
        - topic（字符串）：章节/板块标题（对应主要章节）
@@ -344,6 +361,12 @@ examples:
             "question": "在异步函数中能用 time.sleep() 吗？",
             "answer": "不能！time.sleep() 是同步阻塞函数，会阻塞整个事件循环。应该用 asyncio.sleep()，它是异步非阻塞的。"
           }
+        ],
+        "knowledge": [
+          {"knowledge": "asyncio 库是 Python 异步编程的核心框架", "category": "工具"},
+          {"knowledge": "事件循环（Event Loop）是异步编程的调度核心", "category": "概念"},
+          {"knowledge": "协程（Coroutine）是一种轻量级的并发单元", "category": "概念"},
+          {"knowledge": "async/await 语法糖简化异步代码编写", "category": "技能"}
         ],
         "topics": ["Python", "异步编程", "asyncio", "协程", "事件循环", "并发编程", "I/O密集型", "性能优化", "aiohttp", "爬虫"]
       }
