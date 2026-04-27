@@ -1,14 +1,15 @@
 ---
 name: synthesai
 description: "SynthesAI: Transform videos/articles into structured knowledge cards with AI"
-version: 1.0.0
+version: 1.1.0
 author: SynthesAI Team
 license: MIT
 metadata:
   hermes:
-    tags: [learning, video-summary, knowledge-card, vocabulary, feishu, ai, synthesai]
+    tags: [learning, video-summary, knowledge-card, vocabulary, feishu, ai, synthesai, bilibili-auth]
     related_skills: []
-    platforms: [cli, telegram, discord, slack]
+    platforms: [cli, telegram, discord, slack, matrix, signal, weixin]
+    media_support: true
 ---
 
 # SynthesAI Knowledge Assistant
@@ -22,6 +23,7 @@ Transform complex content into clear, actionable knowledge.
 | **Video Summary** | B站/YouTube/抖音 URL | Structured summary + key frames |
 | **Link Learning** | Article URL | Knowledge card + key concepts |
 | **Vocabulary** | Text or URL | Visual word cards (PNG) |
+| **Bilibili Auth** | QR code generation | Login QR image for user to scan |
 
 ## Quick Commands
 
@@ -57,6 +59,119 @@ Scan QR code → cookies saved automatically
 ### Feishu Publish
 ```
 la feishu publish <title> <content>
+```
+
+## 🖼️ Sending Images via Hermes (QR Codes, Visual Cards)
+
+**CRITICAL: Hermes messaging platforms automatically deliver images.**
+
+When you generate an image (QR code, visual card), send it to the user using Hermes's `send_message` tool with the `MEDIA:<path>` prefix.
+
+### Supported Image Formats
+
+| Extension | Platform Support |
+|-----------|-----------------|
+| `.png` | All platforms |
+| `.jpg` / `.jpeg` | All platforms |
+| `.webp` | Telegram, Discord |
+| `.gif` | Telegram, Discord |
+
+### Supported Platforms for Media
+
+- `telegram` ✅
+- `discord` ✅
+- `matrix` ✅
+- `signal` ✅
+- `weixin` ✅
+- `yuanbao` ✅
+
+**Note:** Slack, Email, SMS do NOT support MEDIA attachments via send_message.
+
+### QR Code Login Workflow (with Image Delivery)
+
+**User says:** "我要登录B站" or "帮我扫码登录"
+
+**You should:**
+
+1. **Generate QR Code Image**
+```bash
+la auth login --platform bilibili
+```
+This outputs the QR image path, e.g.: `/tmp/bilibili_login_qr.png`
+
+2. **Send QR Image to User**
+```json
+{
+  "action": "send",
+  "target": "telegram",
+  "message": "请用B站App扫描下方二维码登录:\nMEDIA:/tmp/bilibili_login_qr.png"
+}
+```
+
+Or for Discord:
+```json
+{
+  "action": "send",
+  "target": "discord",
+  "message": "请扫描二维码登录B站\nMEDIA:/tmp/bilibili_login_qr.png"
+}
+```
+
+3. **Poll for Login Confirmation**
+The CLI will show progress. When login succeeds, notify user:
+```json
+{
+  "action": "send",
+  "target": "telegram",
+  "message": "✅ B站登录成功！现在可以下载视频了"
+}
+```
+
+### Visual Knowledge Card Delivery
+
+When vocabulary or link learning generates a visual card (PNG):
+
+```json
+{
+  "action": "send",
+  "target": "telegram",
+  "message": "这是你的知识卡片:\nMEDIA:/tmp/knowledge_card.png"
+}
+```
+
+### Multiple Media Files
+
+You can send multiple images in one message:
+```json
+{
+  "action": "send",
+  "target": "telegram",
+  "message": "知识卡片 + QR码:\nMEDIA:/tmp/card.png\nMEDIA:/tmp/qr.png"
+}
+```
+
+### Complete Bilibili Login Example (Telegram)
+
+```
+User: 帮我登录B站
+
+Step 1: Generate QR
+$ la auth login --platform bilibili
+Output: QR saved to /tmp/hermes/cache/bilibili_qr_abc123.png
+
+Step 2: Send QR to user
+send_message({
+  "target": "telegram",
+  "message": "请扫描下方二维码登录B站（有效期180秒）:\n\nMEDIA:/tmp/hermes/cache/bilibili_qr_abc123.png"
+})
+
+Step 3: User scans with Bilibili App
+
+Step 4: Login succeeds
+send_message({
+  "target": "telegram",
+  "message": "✅ B站登录成功！已保存登录凭证。\n\n现在可以下载B站视频了，发送视频链接即可。"
+})
 ```
 
 ## Prerequisites

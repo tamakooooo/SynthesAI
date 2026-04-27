@@ -2,6 +2,12 @@
 
 Get Bilibili (B站) login QR code for video download authentication.
 
+## Hermes Agent Integration
+
+**Use `send_message` with `MEDIA:<path>` to deliver QR images to users.**
+
+Supported platforms: Telegram, Discord, Matrix, Signal, Weixin, Yuanbao
+
 ## Usage
 
 ```bash
