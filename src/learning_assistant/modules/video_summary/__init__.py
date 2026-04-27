@@ -6,6 +6,7 @@ This module provides complete video content summarization workflow.
 
 import asyncio
 import concurrent.futures
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -24,6 +25,64 @@ from learning_assistant.modules.video_summary.audio_extractor import AudioExtrac
 from learning_assistant.modules.video_summary.downloader import VideoDownloader
 from learning_assistant.modules.video_summary.frame_extractor import FrameExtractor
 from learning_assistant.modules.video_summary.transcriber import AudioTranscriber
+
+
+def split_text_with_tables(text: str) -> list[dict[str, Any]]:
+    """Split text into segments, separating tables from regular text.
+
+    Args:
+        text: Text that may contain markdown tables
+
+    Returns:
+        List of segments: {"type": "text"|"table", "content": "..."} or {"type": "table", "headers": [], "rows": []}
+    """
+    if not text:
+        return []
+
+    # Pattern to find entire table blocks (header + separator + rows)
+    # Matches: | header | header |\n |:---|:---|\n | data | data |\n...
+    table_block_pattern = re.compile(
+        r'(\|[^\n]+\|\s*\n)(\|[:\-]+?\|\s*\n)((?:\|[^\n]+\|\s*\n)+)',
+        re.MULTILINE
+    )
+
+    segments = []
+    last_end = 0
+
+    for match in table_block_pattern.finditer(text):
+        # Add text before the table
+        before_text = text[last_end:match.start()].strip()
+        if before_text:
+            segments.append({"type": "text", "content": before_text})
+
+        # Parse the table
+        header_line = match.group(1).strip()
+        data_lines = match.group(3).strip()
+
+        # Extract headers (remove leading/trailing |)
+        headers = [c.strip() for c in header_line[1:-1].split('|')]
+
+        # Extract rows
+        rows = []
+        for line in data_lines.split('\n'):
+            line = line.strip()
+            if line.startswith('|') and line.endswith('|'):
+                cells = [c.strip() for c in line[1:-1].split('|')]
+                rows.append(cells)
+
+        segments.append({"type": "table", "headers": headers, "rows": rows})
+        last_end = match.end()
+
+    # Add remaining text
+    remaining_text = text[last_end:].strip()
+    if remaining_text:
+        segments.append({"type": "text", "content": remaining_text})
+
+    # If no tables found, return the whole text
+    if not segments:
+        segments.append({"type": "text", "content": text})
+
+    return segments
 
 
 class VideoSummaryModule(BaseModule):
@@ -599,7 +658,17 @@ class VideoSummaryModule(BaseModule):
                 if chapter_title:
                     blocks.append(PublishBlock(type="heading", text=f"{start_time} - {chapter_title}" if start_time else chapter_title, level=3))
                 if chapter_summary:
-                    blocks.append(PublishBlock(type="paragraph", text=chapter_summary))
+                    # Parse chapter summary for tables
+                    segments = split_text_with_tables(chapter_summary)
+                    for segment in segments:
+                        if segment["type"] == "table":
+                            blocks.append(PublishBlock(
+                                type="table",
+                                table_headers=segment["headers"],
+                                table_rows=segment["rows"],
+                            ))
+                        else:
+                            blocks.append(PublishBlock(type="paragraph", text=segment["content"]))
 
         # 常见问题
         if qa_items:

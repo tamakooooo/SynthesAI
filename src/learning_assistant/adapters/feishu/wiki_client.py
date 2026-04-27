@@ -133,49 +133,93 @@ class FeishuWikiClient:
                 logger.error(f"Failed to process image {image_path}: {e}")
 
         # Step 3.5: Process tables at correct positions
-        # Tables need special handling - convert to bullet list format for now
-        # as Feishu table API requires multiple steps (create table + cells + content)
-        # TODO: Implement full table block creation with Feishu API
+        # Create real table blocks using Feishu table API
         for preceding_idx, table_block in table_info:
             try:
+                table_data = table_block.get("_table_data", {})
+                headers = table_data.get("headers", [])
+                rows = table_data.get("rows", [])
+
+                if not rows and not headers:
+                    continue
+
+                # Calculate dimensions
+                all_rows = ([headers] if headers else []) + rows
+                row_size = len(all_rows)
+                column_size = max(len(row) for row in all_rows) if all_rows else 0
+
+                if row_size == 0 or column_size == 0:
+                    continue
+
                 # Calculate insertion index
                 if preceding_idx < 0:
                     insert_index = offset
                 else:
                     insert_index = preceding_idx + 1 + offset
 
-                table_data = table_block.get("_table_data", {})
-                headers = table_data.get("headers", [])
-                rows = table_data.get("rows", [])
+                logger.debug(f"Creating table at index {insert_index}: rows={row_size}, cols={column_size}")
 
-                # Convert table to bullet list format
-                # Add header row if present
-                if headers:
-                    header_text = "| " + " | ".join(headers) + " |"
-                    doc_client.append_blocks(
-                        token=token,
-                        document_id=document_id,
-                        blocks=[{
-                            "block_type": 12,  # bullet
-                            "bullet": {"elements": [{"text_run": {"content": header_text, "text_element_style": {}}}], "style": {}},
-                        }],
-                    )
-                    offset += 1
+                # Create table block
+                table_block_id, cell_ids = doc_client.create_table_block(
+                    token=token,
+                    document_id=document_id,
+                    row_size=row_size,
+                    column_size=column_size,
+                    index=insert_index,
+                )
 
-                # Add data rows
-                for row in rows:
-                    row_text = "| " + " | ".join(row) + " |"
-                    doc_client.append_blocks(
-                        token=token,
-                        document_id=document_id,
-                        blocks=[{
-                            "block_type": 12,  # bullet
-                            "bullet": {"elements": [{"text_run": {"content": row_text, "text_element_style": {}}}], "style": {}},
-                        }],
-                    )
-                    offset += 1
+                if not table_block_id or not cell_ids:
+                    logger.warning("Failed to create table block, falling back to bullet list")
+                    # Fallback to bullet list format
+                    if headers:
+                        header_text = "| " + " | ".join(headers) + " |"
+                        doc_client.append_blocks(
+                            token=token,
+                            document_id=document_id,
+                            blocks=[{
+                                "block_type": 12,
+                                "bullet": {"elements": [{"text_run": {"content": header_text, "text_element_style": {}}}], "style": {}},
+                            }],
+                        )
+                    for row in rows:
+                        row_text = "| " + " | ".join(row) + " |"
+                        doc_client.append_blocks(
+                            token=token,
+                            document_id=document_id,
+                            blocks=[{
+                                "block_type": 12,
+                                "bullet": {"elements": [{"text_run": {"content": row_text, "text_element_style": {}}}], "style": {}},
+                            }],
+                        )
+                    continue
 
-                logger.info(f"Table converted to bullet list: {len(headers)} headers, {len(rows)} data rows")
+                # Fill table cells with content
+                # cell_ids is ordered by row: first row cells, then second row cells, etc.
+                cell_idx = 0
+                for row_data in all_rows:
+                    for col_idx, cell_text in enumerate(row_data):
+                        if cell_idx < len(cell_ids):
+                            cell_id = cell_ids[cell_idx]
+                            doc_client.update_table_cell(
+                                token=token,
+                                document_id=document_id,
+                                cell_block_id=cell_id,
+                                text=cell_text,
+                            )
+                            cell_idx += 1
+                    # Fill remaining cells in this row with empty string
+                    for _ in range(column_size - len(row_data)):
+                        if cell_idx < len(cell_ids):
+                            doc_client.update_table_cell(
+                                token=token,
+                                document_id=document_id,
+                                cell_block_id=cell_ids[cell_idx],
+                                text="",
+                            )
+                            cell_idx += 1
+
+                logger.info(f"Table created with {row_size} rows, {column_size} columns, {len(cell_ids)} cells filled")
+                offset += 1  # Table block adds one block
             except Exception as e:
                 logger.error(f"Failed to process table: {e}")
 

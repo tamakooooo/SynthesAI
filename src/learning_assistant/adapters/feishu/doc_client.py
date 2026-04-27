@@ -240,6 +240,106 @@ class FeishuDocClient:
         logger.debug(f"Bound image token {file_token} to block {block_id}")
         return True
 
+    # ── Table Block Methods ──────────────────────────────────────────────────────
+
+    def create_table_block(
+        self,
+        token: str,
+        document_id: str,
+        row_size: int,
+        column_size: int,
+        index: int | None = None,
+    ) -> tuple[str | None, list[str] | None]:
+        """Create an empty table block, return the block_id and cell block_ids.
+
+        Args:
+            token: tenant_access_token
+            document_id: Document ID
+            row_size: Number of rows
+            column_size: Number of columns
+            index: Insert position (optional, append to end if None)
+
+        Returns:
+            (table_block_id, list of cell_block_ids) or (None, None) if failed
+        """
+        payload = {
+            "children": [
+                {
+                    "block_type": 31,  # Table Block
+                    "table": {
+                        "property": {
+                            "row_size": row_size,
+                            "column_size": column_size,
+                        }
+                    },
+                }
+            ]
+        }
+        if index is not None:
+            payload["index"] = index
+
+        response = requests.post(
+            f"{self.base_url}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+            timeout=20,
+        )
+        response.raise_for_status()
+        result = response.json()
+        self._raise_for_business_error(result)
+
+        children = result.get("data", {}).get("children", [])
+        if children:
+            table_block = children[0]
+            table_block_id = table_block.get("block_id")
+            # Get cell block_ids from the table block's children
+            cell_ids = table_block.get("table", {}).get("cells", [])
+            logger.info(f"Created table block: block_id={table_block_id}, rows={row_size}, cols={column_size}, cells={len(cell_ids)}")
+            return table_block_id, cell_ids
+        return None, None
+
+    def update_table_cell(
+        self,
+        token: str,
+        document_id: str,
+        cell_block_id: str,
+        text: str,
+    ) -> bool:
+        """Update a table cell's text content.
+
+        Args:
+            token: tenant_access_token
+            document_id: Document ID
+            cell_block_id: Table cell block_id
+            text: Text content for the cell
+
+        Returns:
+            True if successful, False otherwise
+        """
+        response = requests.patch(
+            f"{self.base_url}/docx/v1/documents/{document_id}/blocks/{cell_block_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "update_text_elements": {
+                    "elements": [
+                        {
+                            "text_run": {
+                                "content": text,
+                                "text_element_style": {},
+                            }
+                        }
+                    ]
+                }
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        result = response.json()
+        self._raise_for_business_error(result)
+
+        logger.debug(f"Updated table cell {cell_block_id}: '{text[:30]}...'")
+        return True
+
     # ── Whiteboard (Board) Block Methods ──────────────────────────────────────────────
 
     def create_whiteboard_block(
