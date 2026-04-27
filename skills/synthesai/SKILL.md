@@ -20,10 +20,11 @@ Transform complex content into clear, actionable knowledge.
 
 | Feature | Input | Output |
 |---------|-------|--------|
-| **Video Summary** | B站/YouTube/抖音 URL | Structured summary + key frames |
+| **Video Summary** | B站/YouTube/抖音 URL | Structured summary + key frames + mindmap + tables |
 | **Link Learning** | Article URL | Knowledge card + key concepts |
 | **Vocabulary** | Text or URL | Visual word cards (PNG) |
 | **Bilibili Auth** | QR code generation | Login QR image for user to scan |
+| **Feishu Publish** | Video summary | Document with images, mindmap, tables |
 
 ## Quick Commands
 
@@ -247,7 +248,7 @@ Card can be sent as image to user via messaging platforms.
 
 ## Feishu Integration
 
-Publish knowledge cards to Feishu wiki:
+Publish knowledge cards to Feishu wiki with rich content:
 
 ```yaml
 # Configure in settings.local.yaml
@@ -259,6 +260,17 @@ adapters:
       space_id: "..."
       root_node_token: "..."
 ```
+
+### Feishu Document Features
+
+When publishing to Feishu knowledge base, the document includes:
+
+| Content Type | Feishu Block | Description |
+|--------------|--------------|-------------|
+| **Key Frames** | Image Block (block_type=27) | Screenshots at chapter timestamps |
+| **Mindmap** | Whiteboard Block (block_type=43) | Interactive mindmap visualization |
+| **Tables** | Table Block (block_type=31) | Markdown tables converted to proper table blocks |
+| **Chapters** | Heading + Paragraph | Structured chapter content |
 
 Then:
 ```

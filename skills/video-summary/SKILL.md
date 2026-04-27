@@ -175,6 +175,27 @@ GET /api/v1/video/{task_id}/result
 2. Poll status every 30-60 seconds until `status: completed`
 3. Fetch result when completed
 
+## Output Content
+
+Video summary includes:
+
+| Content | Description |
+|---------|-------------|
+| **Summary** | Video overview and key insights |
+| **Chapters** | Timestamped sections with titles and summaries |
+| **Key Frames** | Screenshots extracted at chapter timestamps |
+| **Mindmap** | Visual structure of video content hierarchy |
+| **Tables** | Markdown tables converted to proper format |
+| **Q&A** | Potential questions and answers |
+
+## Feishu Publishing Features
+
+When enabled, video summaries are published to Feishu knowledge base with:
+
+- **Key Frames**: Inserted as image blocks at correct positions
+- **Mindmap**: Created in whiteboard block (block_type=43) with interactive nodes
+- **Tables**: Converted to table blocks (block_type=31) with proper formatting
+
 ## Performance
 
 | Duration | Total Time |
