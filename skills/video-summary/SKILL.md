@@ -10,7 +10,7 @@ description: |
   - Requests video learning notes or transcripts
   - Needs B站 authentication ("登录B站", "扫码登录")
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   author: Learning Assistant Team
   hermes:
     platforms: [cli, telegram, discord, slack, matrix, signal, weixin]

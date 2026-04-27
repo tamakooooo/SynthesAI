@@ -7,6 +7,28 @@ Claude Code Skills for Learning Assistant - standardized, reusable capabilities 
 
 ---
 
+## ⚠️ Prerequisites: yutto Installation (Required for B站 Videos)
+
+**Before using video-summary for B站 videos, install yutto:**
+
+```bash
+pip install yutto>=2.2.0
+yutto --version  # Verify installation
+```
+
+| Platform | Downloader | Notes |
+|----------|------------|-------|
+| **B站** | yutto CLI | Required - handles WBI signature & CDN |
+| **YouTube** | yt-dlp | Built-in |
+| **抖音** | yt-dlp | Built-in |
+
+> **Why yutto is mandatory for B站:**
+> - B站 videos require WBI signature (yutto handles automatically)
+> - yt-dlp often fails with SSL/CDN timeout errors
+> - yutto provides stable, authenticated downloads
+
+---
+
 ## What are Skills?
 
 Skills are modular, reusable capabilities packaged as standardized `SKILL.md` files. Each skill provides specialized instructions that Claude can automatically invoke when needed.

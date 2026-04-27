@@ -1,7 +1,7 @@
 ---
 name: synthesai
 description: "SynthesAI: Transform videos/articles into structured knowledge cards with AI"
-version: 1.1.0
+version: 1.2.0
 author: SynthesAI Team
 license: MIT
 metadata:
