@@ -21,6 +21,25 @@ metadata:
 
 Summarizes video content from URLs and generates structured learning notes with transcripts.
 
+## ⚠️ Prerequisites: yutto Installation (Required for B站)
+
+**Before using this skill for B站 videos, install yutto:**
+
+```bash
+pip install yutto>=2.2.0
+```
+
+| Platform | Downloader | Notes |
+|----------|------------|-------|
+| **B站** | yutto (CLI) | Required - handles WBI signature & CDN |
+| **YouTube** | yt-dlp | Built-in |
+| **抖音** | yt-dlp | Built-in |
+
+> **Why yutto is mandatory for B站:**
+> - B站 videos require WBI signature (yutto handles automatically)
+> - yt-dlp often fails with SSL/CDN timeout errors
+> - yutto provides stable, authenticated downloads
+
 ## 🔐 B站 Authentication (Required for Some Videos)
 
 Some B站 videos require login cookies to download. Use QR code authentication:

@@ -16,6 +16,20 @@ metadata:
 
 Transform complex content into clear, actionable knowledge.
 
+## ⚠️ Prerequisites: yutto Installation (Required for B站 Videos)
+
+**Before summarizing B站 videos, install yutto:**
+
+```bash
+pip install yutto>=2.2.0
+yutto --version  # Verify installation
+```
+
+> **Why yutto is required for B站:**
+> - Handles WBI signature authentication automatically
+> - Avoids yt-dlp CDN timeout errors
+> - Provides stable, authenticated downloads
+
 ## What SynthesAI Does
 
 | Feature | Input | Output |

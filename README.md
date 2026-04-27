@@ -47,8 +47,28 @@ cd SynthesAI
 
 # Install dependencies
 pip install -e ".[dev]"
+```
 
-# Setup configuration
+### ⚠️ Important: yutto Installation (Required for B站 Videos)
+
+**yutto is a dedicated B站 downloader that handles WBI signatures and CDN issues automatically.**
+
+```bash
+# Install yutto (B站视频下载必备)
+pip install yutto>=2.2.0
+
+# Verify installation
+yutto --version
+```
+
+> **Why yutto is required:**
+> - B站 uses WBI signature authentication (yutto handles this automatically)
+> - yt-dlp often fails with CDN timeout errors on B站
+> - yutto provides more stable downloads for B站 videos
+
+### Setup Configuration
+
+```bash
 la setup
 ```
 

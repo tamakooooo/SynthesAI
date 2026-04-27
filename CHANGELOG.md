@@ -5,6 +5,34 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 变更
+
+#### 架构优化
+- 🗑️ 移除 BilibiliDownloader (814行代码删除)
+- 📦 现仅使用 yutto CLI + yt-dlp 双引擎下载
+
+#### 文档更新
+- 📝 强调 yutto 安装要求（README.md, SKILL.md）
+- 📝 downloader.py 添加 yutto 安装说明注释
+- 📝 更新下载优先级说明：yutto CLI (B站优先) > yt-dlp (备用)
+
+### 重要说明
+
+⚠️ **B站视频下载必须安装 yutto:**
+
+```bash
+pip install yutto>=2.2.0
+```
+
+原因：
+- B站使用 WBI 签名认证，yutto 自动处理
+- yt-dlp 在 B站 CDN 经常超时失败
+- yutto 提供更稳定的登录态下载
+
+---
+
 ## [0.3.1] - 2026-04-24
 
 ### 修复

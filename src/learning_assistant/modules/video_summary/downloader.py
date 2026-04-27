@@ -2,6 +2,22 @@
 Video Downloader for Learning Assistant.
 
 This module provides video download capabilities using yt-dlp and yutto.
+
+IMPORTANT: yutto Installation (Required for B站 Videos)
+=========================================================
+
+Before using this module for B站 videos, install yutto:
+
+    pip install yutto>=2.2.0
+
+Why yutto is required for B站:
+- B站 uses WBI signature authentication (yutto handles automatically)
+- yt-dlp often fails with CDN timeout errors on B站
+- yutto provides more stable downloads with authentication support
+
+Download Priority:
+- B站: yutto CLI (priority) → yt-dlp (fallback)
+- YouTube/抖音: yt-dlp only
 """
 
 import re
