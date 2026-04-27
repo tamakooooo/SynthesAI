@@ -8,7 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-PublishBlockType = Literal["heading", "paragraph", "bullet_list", "quote", "code", "image"]
+PublishBlockType = Literal["heading", "paragraph", "bullet_list", "quote", "code", "image", "table"]
 
 
 class PublishBlock(BaseModel):
@@ -22,6 +22,9 @@ class PublishBlock(BaseModel):
     # Image support fields
     image_path: str | None = None  # Local image path for upload
     image_token: str | None = None  # Feishu file_token after upload
+    # Table support fields
+    table_rows: list[list[str]] = Field(default_factory=list)  # Table data as rows of cells
+    table_headers: list[str] = Field(default_factory=list)  # Optional header row
 
 
 class PublishPayload(BaseModel):

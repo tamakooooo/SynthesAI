@@ -123,7 +123,7 @@ output_schema:
                       description: Level 3 nodes (specific points)
           required: [topic]
       required: [root, children]
-  required: [title, summary, key_points, chapters]
+  required: [title, summary, key_points, chapters, mindmap_structure]
 
 # System prompt
 system_prompt: |
@@ -159,9 +159,10 @@ system_prompt: |
 
   输出格式要求（严格遵守）：
   - 必须返回合法的 JSON 对象（可用 json.loads 解析）
-  - 所有字段名必须使用英文：title, summary, key_points, chapters
+  - 所有字段名必须使用英文：title, summary, key_points, chapters, mindmap_structure
   - chapters 必须是数组，每个元素必须有 title（字符串）、start_time、summary 字段
   - key_points 必须是数组，每个元素必须有 point、importance 字段
+  - mindmap_structure 必须是对象，包含 root 和 children 字段
   - 不要使用中文字段名或嵌套对象作为章节标题
 
   JSON 结构示例：
@@ -173,7 +174,13 @@ system_prompt: |
     ],
     "chapters": [
       {"title": "章节标题（字符串）", "start_time": "00:00", "summary": "章节概述"}
-    ]
+    ],
+    "mindmap_structure": {
+      "root": "核心主题",
+      "children": [
+        {"topic": "一级节点", "children": [{"subtopic": "二级节点"}]}
+      ]
+    }
   }
 
 # User prompt template

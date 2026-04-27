@@ -31,6 +31,9 @@ class FeishuDocumentBuilder:
             elif block.type == "image":
                 # Image blocks need special handling - return placeholder with path
                 blocks.append(self._image_placeholder(block))
+            elif block.type == "table":
+                # Table blocks use Feishu block_type 31
+                blocks.extend(self._table_blocks(block))
             else:
                 blocks.append(self._paragraph_block(block.text))
 
@@ -102,6 +105,44 @@ class FeishuDocumentBuilder:
                 "style": {"language": block.language or "PlainText"},
             },
         }
+
+    def _table_blocks(self, block: PublishBlock) -> list[dict[str, Any]]:
+        """Build Feishu table blocks (block_type 31 + cells).
+
+        Feishu table structure:
+        1. Table block (block_type 31) with property containing row_size, column_size
+        2. Table cell blocks (block_type 32) as children
+
+        Since we can't directly insert cell content in one API call,
+        we return a placeholder structure that wiki_client needs to process.
+        """
+        headers = block.table_headers or []
+        rows = block.table_rows or []
+
+        if not rows:
+            return []
+
+        # Calculate dimensions
+        column_size = max(len(headers), max(len(row) for row in rows) if rows else 0)
+        row_size = len(rows) + (1 if headers else 0)
+
+        # Build table block with property
+        table_block = {
+            "block_type": 31,  # Table Block
+            "table": {
+                "cells": [],  # Will be filled after cell blocks are created
+                "property": {
+                    "row_size": row_size,
+                    "column_size": column_size,
+                },
+            },
+            "_table_data": {  # Internal fields for wiki_client to process
+                "headers": headers,
+                "rows": rows,
+            },
+        }
+
+        return [table_block]
 
     def _text_element(self, text: str) -> dict[str, Any]:
         return {

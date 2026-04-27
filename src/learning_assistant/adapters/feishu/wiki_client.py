@@ -33,16 +33,18 @@ class FeishuWikiClient:
         from learning_assistant.adapters.feishu.doc_client import FeishuDocClient
         doc_client = FeishuDocClient(self.config)
 
-        # Track images with their position in original blocks
+        # Track images and tables with their position in original blocks
         # Images should be inserted after the text block that precedes them
         image_info = []  # (text_blocks_index_to_insert_after, image_path)
+        table_info = []  # (text_blocks_index_to_insert_after, table_data)
         text_blocks = []
 
-        # First, separate blocks and track where each image should go
-        # The image should appear after the block immediately before it
+        # First, separate blocks and track where each image/table should go
+        # The image/table should appear after the block immediately before it
         text_block_count = 0  # Count of text blocks seen so far
         for i, block in enumerate(blocks):
             image_path = block.get("_image_path")
+            table_data = block.get("_table_data")
             if image_path:
                 # This image should appear after the text block at position (text_block_count - 1)
                 # But if it's the first block, there's no preceding text block
@@ -51,11 +53,18 @@ class FeishuWikiClient:
                 else:
                     preceding_text_idx = -1  # Insert at beginning
                 image_info.append((preceding_text_idx, image_path))
+            elif table_data and block.get("block_type") == 31:
+                # Table block - handle separately
+                if text_block_count > 0:
+                    preceding_text_idx = text_block_count - 1
+                else:
+                    preceding_text_idx = -1
+                table_info.append((preceding_text_idx, block))
             else:
                 text_blocks.append(block)
                 text_block_count += 1
 
-        logger.info(f"Publishing {len(text_blocks)} text blocks and {len(image_info)} image blocks")
+        logger.info(f"Publishing {len(text_blocks)} text blocks, {len(image_info)} image blocks, {len(table_info)} table blocks")
         for preceding_idx, img_path in image_info:
             logger.debug(f"Image '{Path(img_path).name}' should appear after text block {preceding_idx}")
 
@@ -122,6 +131,53 @@ class FeishuWikiClient:
                 offset += 1  # Each image adds one block
             except Exception as e:
                 logger.error(f"Failed to process image {image_path}: {e}")
+
+        # Step 3.5: Process tables at correct positions
+        # Tables need special handling - convert to bullet list format for now
+        # as Feishu table API requires multiple steps (create table + cells + content)
+        # TODO: Implement full table block creation with Feishu API
+        for preceding_idx, table_block in table_info:
+            try:
+                # Calculate insertion index
+                if preceding_idx < 0:
+                    insert_index = offset
+                else:
+                    insert_index = preceding_idx + 1 + offset
+
+                table_data = table_block.get("_table_data", {})
+                headers = table_data.get("headers", [])
+                rows = table_data.get("rows", [])
+
+                # Convert table to bullet list format
+                # Add header row if present
+                if headers:
+                    header_text = "| " + " | ".join(headers) + " |"
+                    doc_client.append_blocks(
+                        token=token,
+                        document_id=document_id,
+                        blocks=[{
+                            "block_type": 12,  # bullet
+                            "bullet": {"elements": [{"text_run": {"content": header_text, "text_element_style": {}}}], "style": {}},
+                        }],
+                    )
+                    offset += 1
+
+                # Add data rows
+                for row in rows:
+                    row_text = "| " + " | ".join(row) + " |"
+                    doc_client.append_blocks(
+                        token=token,
+                        document_id=document_id,
+                        blocks=[{
+                            "block_type": 12,  # bullet
+                            "bullet": {"elements": [{"text_run": {"content": row_text, "text_element_style": {}}}], "style": {}},
+                        }],
+                    )
+                    offset += 1
+
+                logger.info(f"Table converted to bullet list: {len(headers)} headers, {len(rows)} data rows")
+            except Exception as e:
+                logger.error(f"Failed to process table: {e}")
 
         # Step 4: Move to wiki space
         move_response = self._move_doc_to_wiki(token, document_id)
