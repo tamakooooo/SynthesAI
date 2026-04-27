@@ -23,10 +23,16 @@ class OpenAIProvider(BaseLLMProvider):
     """
 
     # Pricing (as of 2026-03-31)
+    # Official OpenAI models
     PRICING = {
         "gpt-4o": {"input": 0.005, "output": 0.015},  # per 1K tokens
         "gpt-4-turbo": {"input": 0.01, "output": 0.03},
         "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
+        # Custom/Third-party models (placeholder pricing - update with actual rates)
+        "kimi-k2.5": {"input": 0.002, "output": 0.005},  # Moonshot AI
+        "glm-5": {"input": 0.001, "output": 0.002},  # Zhipu AI
+        "deepseek-chat": {"input": 0.001, "output": 0.002},
+        "qwen3.6-plus": {"input": 0.002, "output": 0.004},  # Alibaba
     }
 
     def __init__(self, api_key: str, model: str, **kwargs: Any) -> None:
@@ -74,10 +80,18 @@ class OpenAIProvider(BaseLLMProvider):
         temperature = merged_kwargs.get("temperature", 0.7)
         max_tokens = merged_kwargs.get("max_tokens", 2000)
 
+        # Build messages list with system prompt (if provided)
+        messages = []
+        system_prompt = merged_kwargs.get("system_prompt")
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+            logger.debug(f"Added system prompt: {len(system_prompt)} chars")
+        messages.append({"role": "user", "content": prompt})
+
         # Call OpenAI API
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )

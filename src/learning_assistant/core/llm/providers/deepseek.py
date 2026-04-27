@@ -66,10 +66,18 @@ class DeepSeekProvider(BaseLLMProvider):
         temperature = merged_kwargs.get("temperature", 0.7)
         max_tokens = merged_kwargs.get("max_tokens", 2000)
 
+        # Build messages list with system prompt (if provided)
+        messages = []
+        system_prompt = merged_kwargs.get("system_prompt")
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+            logger.debug(f"Added system prompt: {len(system_prompt)} chars")
+        messages.append({"role": "user", "content": prompt})
+
         # Call DeepSeek API (OpenAI-compatible)
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )

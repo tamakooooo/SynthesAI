@@ -66,10 +66,16 @@ class AnthropicProvider(BaseLLMProvider):
         temperature = merged_kwargs.get("temperature", 0.7)
         max_tokens = merged_kwargs.get("max_tokens", 2000)
 
+        # Extract system prompt (Anthropic uses separate system parameter)
+        system_prompt = merged_kwargs.get("system_prompt")
+        if system_prompt:
+            logger.debug(f"Using system prompt: {len(system_prompt)} chars")
+
         # Call Anthropic API
         response = self.client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
+            system=system_prompt,  # Anthropic's system prompt parameter
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
         )
