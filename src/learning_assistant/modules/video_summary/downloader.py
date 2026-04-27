@@ -1,10 +1,11 @@
 """
 Video Downloader for Learning Assistant.
 
-This module provides video download capabilities using yt-dlp.
+This module provides video download capabilities using yt-dlp and yutto.
 """
 
 import re
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,25 +14,14 @@ from typing import Any
 import yt_dlp
 from loguru import logger
 
-# Import B站-specific downloader
-try:
-    from .bilibili_downloader import BilibiliDownloader
-
-    BILIBILI_DOWNLOADER_AVAILABLE = True
-except ImportError:
-    BILIBILI_DOWNLOADER_AVAILABLE = False
-    logger.warning("BilibiliDownloader not available, B站 downloads will use yt-dlp fallback")
-
 # Import yutto CLI (B站专用下载器，更稳定)
 try:
-    import subprocess
-
     # Check if yutto CLI is available
     _yutto_check = subprocess.run(["yutto", "--version"], capture_output=True, timeout=5)
     YUTTO_AVAILABLE = _yutto_check.returncode == 0
     if YUTTO_AVAILABLE:
         logger.info("yutto CLI available, will use for B站 downloads")
-except (ImportError, FileNotFoundError, subprocess.TimeoutExpired):
+except (FileNotFoundError, subprocess.TimeoutExpired):
     YUTTO_AVAILABLE = False
     logger.warning("yutto not available, using yt-dlp fallback")
 
@@ -68,7 +58,7 @@ class DownloadProgress:
 
 class VideoDownloader:
     """
-    Video Downloader using yt-dlp.
+    Video Downloader using yt-dlp and yutto.
 
     Supports:
     - Multiple platforms (Bilibili, YouTube, Douyin, etc.)
@@ -115,16 +105,6 @@ class VideoDownloader:
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Initialize B站-specific downloader if available
-        if BILIBILI_DOWNLOADER_AVAILABLE:
-            self.bilibili_downloader = BilibiliDownloader(
-                output_dir=self.output_dir,
-                sessdata=sessdata,
-                cookie_file=cookie_file,
-            )
-        else:
-            self.bilibili_downloader = None
 
         logger.info(f"VideoDownloader initialized with output_dir: {self.output_dir}")
 
@@ -226,7 +206,7 @@ class VideoDownloader:
         platform = self.detect_platform(url)
         logger.info(f"Platform: {platform}")
 
-        # Priority: yutto CLI > BilibiliDownloader > yt-dlp
+        # Priority: yutto CLI for B站, yt-dlp for others
         if platform == "bilibili" and YUTTO_AVAILABLE:
             logger.info("Using yutto CLI for B站 video (most stable)")
             result = self._download_with_yutto(url, output_filename)
@@ -234,12 +214,7 @@ class VideoDownloader:
                 return result
             logger.warning("yutto failed, falling back to yt-dlp")
 
-        # Use BilibiliDownloader for B站 downloads if yutto failed
-        if platform == "bilibili" and self.bilibili_downloader:
-            logger.info("Using BilibiliDownloader for B站 video (WBI signature + CDN preference)")
-            return self.bilibili_downloader.download(url, **kwargs)
-
-        # Fallback to yt-dlp for other platforms or if yutto is not available
+        # Fallback to yt-dlp
         logger.info("Using yt-dlp for download")
 
         # Prepare output path
@@ -410,10 +385,8 @@ class VideoDownloader:
         Returns:
             Downloaded video path or None if failed
         """
-        import re
-        import subprocess
+        import shutil
         import tempfile
-        import asyncio
 
         logger.info(f"Downloading with yutto: {url}")
 
@@ -448,9 +421,7 @@ class VideoDownloader:
 
             logger.debug(f"yutto command: {' '.join(cmd[:5])}...")
 
-            # Run yutto download using subprocess.run
-            # subprocess.run is always safe even in async context because this method
-            # is called from a thread pool (via execute's run_in_executor)
+            # Run yutto download
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -483,7 +454,6 @@ class VideoDownloader:
                 target_path = self.output_dir / downloaded_file.name
 
             # Move file to output directory
-            import shutil
             shutil.move(str(downloaded_file), str(target_path))
 
             # Cleanup temp directory
@@ -499,10 +469,10 @@ class VideoDownloader:
 
         except subprocess.TimeoutExpired:
             logger.error("yutto download timeout (10 minutes)")
+            shutil.rmtree(temp_dir, ignore_errors=True)
             return None
         except Exception as e:
             logger.error(f"yutto download error: {e}")
-            import shutil
             shutil.rmtree(temp_dir, ignore_errors=True)
             return None
 

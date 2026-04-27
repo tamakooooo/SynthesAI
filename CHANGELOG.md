@@ -23,7 +23,7 @@
 
 #### yutto 集成
 - ✅ 自动检测 yutto CLI 可用性
-- ✅ B站下载优先级：yutto > BilibiliDownloader > yt-dlp
+- ✅ B站下载优先级：yutto CLI > yt-dlp (fallback)
 - ✅ 自动从 cookie 文件提取 SESSDATA 和 bili_jct
 - ✅ 支持 `--auth` 参数传递认证信息
 
