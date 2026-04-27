@@ -9,13 +9,30 @@ description: |
   - Mentions "链接学习", "知识卡片", "文章总结"
   - Requests learning cards or Q&A generation from web content
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   author: Learning Assistant Team
+  hermes:
+    platforms: [cli, telegram, discord, matrix, signal, weixin]
+    media_support: true
 ---
 
 # Link Learning Skill
 
 Extracts knowledge from web links and generates structured knowledge cards with Q&A and quizzes.
+
+## 🖼️ Visual Card Delivery (Hermes Agent)
+
+Generated PNG knowledge cards can be sent via Hermes `send_message`:
+
+```json
+{
+  "action": "send",
+  "target": "telegram",
+  "message": "这是你的知识卡片:\nMEDIA:/tmp/link_card.png"
+}
+```
+
+**Supported Media Platforms**: Telegram, Discord, Matrix, Signal, Weixin, Yuanbao
 
 ## HTTP API Usage (For Agents)
 

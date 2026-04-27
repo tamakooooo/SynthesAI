@@ -1,7 +1,7 @@
 # Learning Assistant Skills
 
-> **Version**: v0.3.1
-> **Last Updated**: 2026-04-25
+> **Version**: v0.3.2
+> **Last Updated**: 2026-04-27
 
 Claude Code Skills for Learning Assistant - standardized, reusable capabilities following the Claude Code Skills Specification (2026).
 
@@ -16,6 +16,8 @@ Skills are modular, reusable capabilities packaged as standardized `SKILL.md` fi
 - ✅ **Automatic invocation** - Claude activates skills based on context matching
 - ✅ **Slash command support** - Manual invocation via `/skill-name`
 - ✅ **Composable** - Multiple skills can work together
+- ✅ **Hermes Agent compatible** - Works with Hermes messaging platforms
+- ✅ **Media support** - QR codes and visual cards can be sent as images
 
 ---
 
@@ -23,11 +25,35 @@ Skills are modular, reusable capabilities packaged as standardized `SKILL.md` fi
 
 | Skill | Description | API Endpoint | Status |
 |-------|-------------|--------------|--------|
-| [video-summary](video-summary/SKILL.md) | Summarizes video content (B站/YouTube/抖音) | `/api/v1/video/submit` (async) | ✅ Available |
+| [video-summary](video-summary/SKILL.md) | Summarizes video content (B站/YouTube/抖音) + QR auth | `/api/v1/video/submit` (async) | ✅ Available |
 | [link-learning](link-learning/SKILL.md) | Extracts knowledge from web links | `/api/v1/link` (sync) | ✅ Available |
 | [vocabulary](vocabulary/SKILL.md) | Extracts vocabulary from text/URL | `/api/v1/vocabulary` (sync) | ✅ Available |
 | [list-skills](list-skills/SKILL.md) | Lists all available skills | `/api/v1/skills` | ✅ Available |
 | [learning-history](learning-history/SKILL.md) | Queries learning history | `/api/v1/history` | ✅ Available |
+| [synthesai](synthesai/SKILL.md) | Hermes Agent integration guide | - | ✅ Available |
+
+---
+
+## 🔐 Authentication Skills
+
+### B站 Login (QR Code)
+
+For videos requiring login, use QR authentication:
+
+```bash
+la auth login --platform bilibili
+```
+
+**Hermes Agent**: Send QR image with `send_message`:
+```json
+{
+  "action": "send",
+  "target": "telegram",
+  "message": "扫描二维码登录:\nMEDIA:/tmp/bilibili_qr.png"
+}
+```
+
+**Supported Media Platforms**: Telegram, Discord, Matrix, Signal, Weixin, Yuanbao
 
 ---
 

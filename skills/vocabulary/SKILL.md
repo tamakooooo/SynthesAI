@@ -11,13 +11,30 @@ description: |
   - Needs contextual stories for vocabulary retention
 
 metadata:
-  version: 2.1.0
+  version: 2.2.0
   author: Learning Assistant Team
+  hermes:
+    platforms: [cli, telegram, discord, matrix, signal, weixin]
+    media_support: true
 ---
 
 # Vocabulary Learning Skill
 
 Extracts vocabulary from text content and generates comprehensive word cards with phonetics, definitions, examples, and contextual stories.
+
+## 🖼️ Visual Card Delivery (Hermes Agent)
+
+Generated PNG visual cards can be sent via Hermes `send_message`:
+
+```json
+{
+  "action": "send",
+  "target": "telegram",
+  "message": "这是你的词汇学习卡片:\nMEDIA:/tmp/vocabulary_card.png"
+}
+```
+
+**Supported Media Platforms**: Telegram, Discord, Matrix, Signal, Weixin, Yuanbao
 
 ## HTTP API Usage (For Agents)
 

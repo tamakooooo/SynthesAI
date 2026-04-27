@@ -8,14 +8,79 @@ description: |
   - Asks to "summarize video", "analyze this video", "summarize this link"
   - Mentions "视频总结", "总结视频", "视频笔记"
   - Requests video learning notes or transcripts
+  - Needs B站 authentication ("登录B站", "扫码登录")
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   author: Learning Assistant Team
+  hermes:
+    platforms: [cli, telegram, discord, slack, matrix, signal, weixin]
+    media_support: true
 ---
 
 # Video Summary Skill
 
 Summarizes video content from URLs and generates structured learning notes with transcripts.
+
+## 🔐 B站 Authentication (Required for Some Videos)
+
+Some B站 videos require login cookies to download. Use QR code authentication:
+
+### Generate Login QR
+
+```bash
+la auth login --platform bilibili
+```
+
+Output: QR image saved to `/tmp/bilibili_login_qr.png`
+
+### Send QR to User (Hermes Agent)
+
+For Hermes messaging platforms, use `send_message` with `MEDIA:<path>`:
+
+```json
+{
+  "action": "send",
+  "target": "telegram",
+  "message": "请用B站App扫描下方二维码登录（有效期180秒）:\n\nMEDIA:/tmp/bilibili_login_qr.png"
+}
+```
+
+### Supported Media Platforms
+
+| Platform | QR Image Support |
+|----------|-----------------|
+| Telegram | ✅ `.png`, `.jpg`, `.gif` |
+| Discord | ✅ `.png`, `.jpg`, `.gif` |
+| Matrix | ✅ `.png`, `.jpg` |
+| Signal | ✅ `.png`, `.jpg` |
+| Weixin | ✅ `.png`, `.jpg` |
+| Yuanbao | ✅ `.png`, `.jpg` |
+| Slack | ❌ No MEDIA support |
+| Email | ❌ No MEDIA support |
+
+### Login Workflow
+
+```
+User: "我要下载B站视频，需要登录"
+
+Step 1: Generate QR
+$ la auth login --platform bilibili
+→ QR saved: /tmp/bilibili_qr_abc123.png
+
+Step 2: Send QR image
+send_message({
+  "target": "telegram",
+  "message": "扫描二维码登录B站:\nMEDIA:/tmp/bilibili_qr_abc123.png"
+})
+
+Step 3: User scans → CLI confirms success
+
+Step 4: Notify user
+send_message({
+  "target": "telegram", 
+  "message": "✅ B站登录成功！现在可以下载视频了"
+})
+```
 
 ## HTTP API Usage (For Agents)
 
