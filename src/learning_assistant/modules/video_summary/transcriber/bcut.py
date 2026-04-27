@@ -38,9 +38,9 @@ class BcutASR(BaseASR):
     """
 
     # Network request timeout (seconds)
-    REQUEST_TIMEOUT = 30
-    # Max polling attempts
-    MAX_POLL_RETRIES = 180  # 3 minutes max
+    REQUEST_TIMEOUT = 60  # Increased from 30 to handle network instability
+    # Max polling attempts (increased for longer videos)
+    MAX_POLL_RETRIES = 300  # 5 minutes max
     # Poll interval (seconds)
     POLL_INTERVAL = 1
 

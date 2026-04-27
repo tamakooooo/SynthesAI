@@ -8,7 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-PublishBlockType = Literal["heading", "paragraph", "bullet_list", "quote", "code"]
+PublishBlockType = Literal["heading", "paragraph", "bullet_list", "quote", "code", "image"]
 
 
 class PublishBlock(BaseModel):
@@ -19,6 +19,9 @@ class PublishBlock(BaseModel):
     level: int = 1
     items: list[str] = Field(default_factory=list)
     language: str | None = None
+    # Image support fields
+    image_path: str | None = None  # Local image path for upload
+    image_token: str | None = None  # Feishu file_token after upload
 
 
 class PublishPayload(BaseModel):
@@ -32,3 +35,6 @@ class PublishPayload(BaseModel):
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     published_at: datetime | None = None
+    # Mindmap support fields
+    mindmap_structure: dict[str, Any] | None = None  # Mindmap tree structure
+    mindmap_url: str | None = None  # Generated mindmap URL

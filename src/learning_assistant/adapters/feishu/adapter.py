@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 
 from learning_assistant.adapters.feishu.document_builder import FeishuDocumentBuilder
-from learning_assistant.adapters.feishu.models import FeishuKnowledgeBaseConfig
+from learning_assistant.adapters.feishu.models import FeishuKnowledgeBaseConfig, FeishuPublishResult
 from learning_assistant.adapters.feishu.wiki_client import FeishuWikiClient
 from learning_assistant.core.base_adapter import AdapterState, BaseAdapter
 from learning_assistant.core.event_bus import Event, EventBus, EventType
@@ -50,14 +50,22 @@ class FeishuKnowledgeBaseAdapter(BaseAdapter):
         self._subscribe_publish_events()
         self._set_ready()
 
-    def push_content(self, content: dict[str, Any]) -> bool:
+    def push_content(self, content: dict[str, Any]) -> FeishuPublishResult:
+        """Push content to Feishu knowledge base.
+
+        Args:
+            content: PublishPayload as dict
+
+        Returns:
+            FeishuPublishResult with success status, url, etc.
+        """
         payload = PublishPayload.model_validate(content)
         if not self.settings.enabled:
             logger.debug("Feishu adapter disabled, skipping content push")
-            return False
+            return FeishuPublishResult(success=False, message="Feishu adapter disabled")
         if payload.module not in self.settings.publish_modules:
             logger.debug(f"Module {payload.module} not enabled for Feishu publishing")
-            return False
+            return FeishuPublishResult(success=False, message=f"Module {payload.module} not enabled for publishing")
         if not self.wiki_client:
             raise RuntimeError("Feishu wiki client not initialized")
 
@@ -73,16 +81,18 @@ class FeishuKnowledgeBaseAdapter(BaseAdapter):
                         "title": payload.title,
                         "node_token": result.node_token,
                         "document_id": result.document_id,
+                        "url": result.url,
                     },
                 )
             )
-        return result.success
+        return result
 
     def sync_data(self, data_type: str, data: dict[str, Any]) -> bool:
         if data_type != "publish_payload":
             logger.debug(f"Unsupported Feishu sync data type: {data_type}")
             return False
-        return self.push_content(data)
+        result = self.push_content(data)
+        return result.success
 
     def handle_trigger(self, trigger_data: dict[str, Any]) -> dict[str, Any]:
         return {"status": "not_implemented", "trigger": trigger_data}
@@ -119,7 +129,16 @@ class FeishuKnowledgeBaseAdapter(BaseAdapter):
             return
 
         try:
-            self.push_content(payload_data)
+            result = self.push_content(payload_data)
+            if result.success:
+                logger.info(f"Feishu publish succeeded: {result.url or result.node_token}")
+                # Add feishu_url to event result data
+                result_data = event.data.get("result")
+                if result_data and isinstance(result_data, dict):
+                    result_data["feishu_url"] = result.url
+                    result_data["feishu_node_token"] = result.node_token
+            else:
+                logger.warning(f"Feishu publish failed: {result.message}")
         except Exception as exc:
             self._set_error(str(exc))
             logger.error(f"Feishu publish failed for {event.event_type.value}: {exc}")

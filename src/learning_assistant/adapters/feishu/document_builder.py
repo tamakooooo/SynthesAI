@@ -4,6 +4,8 @@ Convert normalized publish payloads to Feishu docx blocks.
 
 from typing import Any
 
+from loguru import logger
+
 from learning_assistant.core.publishing.models import PublishBlock, PublishPayload
 
 
@@ -26,6 +28,9 @@ class FeishuDocumentBuilder:
                 blocks.append(self._quote_block(block.text))
             elif block.type == "code":
                 blocks.append(self._code_block(block))
+            elif block.type == "image":
+                # Image blocks need special handling - return placeholder with path
+                blocks.append(self._image_placeholder(block))
             else:
                 blocks.append(self._paragraph_block(block.text))
 
@@ -40,6 +45,18 @@ class FeishuDocumentBuilder:
                 blocks.append(self._paragraph_block(line))
 
         return blocks
+
+    def _image_placeholder(self, block: PublishBlock) -> dict[str, Any]:
+        """Return a placeholder dict for image block (needs upload before inserting).
+
+        The actual image upload and block creation is handled by wiki_client.
+        This placeholder carries the image_path for later processing.
+        """
+        return {
+            "block_type": 27,
+            "image": {},
+            "_image_path": block.image_path,  # Internal field for wiki_client to process
+        }
 
     def _heading_block(self, block: PublishBlock) -> dict[str, Any]:
         level = max(1, min(block.level, 9))

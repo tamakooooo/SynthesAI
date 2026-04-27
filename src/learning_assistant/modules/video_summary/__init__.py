@@ -140,7 +140,7 @@ class VideoSummaryModule(BaseModule):
                     frame_extraction_config.get("output_dir", path_config.data_frames)
                 ),
                 output_format=frame_extraction_config.get("format", "jpg"),
-                quality=frame_extraction_config.get("quality", 85),
+                quality=frame_extraction_config.get("quality", 95),  # Higher default quality
             )
             logger.debug("Frame extractor initialized")
         else:
@@ -520,7 +520,7 @@ class VideoSummaryModule(BaseModule):
         video_url: str,
         result: dict[str, Any],
     ) -> PublishPayload:
-        """Map module output to a normalized publishing payload."""
+        """Map module output to a normalized publishing payload with full content."""
         video_info = result.get("video_info", {})
         summary_data = result.get("summary", {})
         summary_text = (
@@ -531,19 +531,78 @@ class VideoSummaryModule(BaseModule):
         )
         key_points = summary_data.get("key_points", [])
         knowledge_points = summary_data.get("knowledge", [])
+        chapters = summary_data.get("chapters", [])
+        qa_items = summary_data.get("qa_items", [])
+        topics = summary_data.get("topics", [])
 
-        blocks = [
-            PublishBlock(type="heading", text="摘要", level=2),
-            PublishBlock(type="paragraph", text=summary_text),
-        ]
+        blocks: list[PublishBlock] = []
+
+        # 概述
+        if summary_text:
+            blocks.append(PublishBlock(type="heading", text="📋 概述", level=2))
+            blocks.append(PublishBlock(type="paragraph", text=summary_text))
+
+        def _extract_text(item: Any) -> str:
+            """Extract text from dict or return string directly."""
+            if isinstance(item, dict):
+                return item.get("point") or item.get("knowledge") or item.get("text") or str(item)
+            return str(item)
+
+        # 关键要点
         if key_points:
-            blocks.append(PublishBlock(type="heading", text="关键观点", level=2))
-            blocks.append(PublishBlock(type="bullet_list", items=[str(item) for item in key_points]))
+            blocks.append(PublishBlock(type="heading", text="🔑 关键要点", level=2))
+            blocks.append(PublishBlock(type="bullet_list", items=[_extract_text(item) for item in key_points]))
+
+        # 知识点
         if knowledge_points:
-            blocks.append(PublishBlock(type="heading", text="知识点", level=2))
-            blocks.append(
-                PublishBlock(type="bullet_list", items=[str(item) for item in knowledge_points])
-            )
+            blocks.append(PublishBlock(type="heading", text="💡 知识点", level=2))
+            blocks.append(PublishBlock(type="bullet_list", items=[_extract_text(item) for item in knowledge_points]))
+
+        # 章节内容
+        if chapters:
+            blocks.append(PublishBlock(type="heading", text="📖 章节内容", level=2))
+            for chapter in chapters:
+                chapter_title = chapter.get("title", "")
+                chapter_summary = chapter.get("summary", "")
+                start_time = chapter.get("start_time", "")
+                screenshot_path = chapter.get("screenshot_path")
+
+                # Add screenshot image if available
+                if screenshot_path:
+                    # Convert relative path to absolute path
+                    # screenshot_path is like "../frames/VideoTitle/chapter_01.jpg"
+                    from pathlib import Path as PathLib
+                    abs_path = PathLib("data") / screenshot_path.replace("../", "")
+                    if abs_path.exists():
+                        blocks.append(PublishBlock(type="image", image_path=str(abs_path)))
+
+                if chapter_title:
+                    blocks.append(PublishBlock(type="heading", text=f"{start_time} - {chapter_title}" if start_time else chapter_title, level=3))
+                if chapter_summary:
+                    blocks.append(PublishBlock(type="paragraph", text=chapter_summary))
+
+        # 常见问题
+        if qa_items:
+            blocks.append(PublishBlock(type="heading", text="❓ 常见问题", level=2))
+            for qa in qa_items:
+                question = qa.get("question", "")
+                answer = qa.get("answer", "")
+                if question:
+                    blocks.append(PublishBlock(type="paragraph", text=f"Q: {question}"))
+                if answer:
+                    blocks.append(PublishBlock(type="paragraph", text=f"A: {answer}"))
+
+        # 主题标签
+        if topics:
+            blocks.append(PublishBlock(type="heading", text="🏷️ 主题标签", level=2))
+            blocks.append(PublishBlock(type="paragraph", text="、".join([str(t) for t in topics])))
+
+        # 如果没有任何内容，添加一个基本信息块
+        if not blocks:
+            blocks.append(PublishBlock(type="paragraph", text=f"视频标题：{video_info.get('title', 'Unknown')}"))
+
+        # Extract mindmap structure from LLM output
+        mindmap_structure = summary_data.get("mindmap_structure")
 
         return PublishPayload(
             module=self.name,
@@ -551,14 +610,16 @@ class VideoSummaryModule(BaseModule):
             summary=summary_text or None,
             source_url=video_url,
             blocks=blocks,
-            tags=[str(video_info.get("platform", "video"))],
+            tags=[str(t) for t in topics] if topics else [str(video_info.get("platform", "video"))],
             metadata={
                 "uploader": video_info.get("uploader", ""),
                 "duration": video_info.get("duration", 0),
+                "platform": video_info.get("platform", ""),
                 "output_paths": {
                     key: str(value) for key, value in result.get("output_paths", {}).items()
                 },
             },
+            mindmap_structure=mindmap_structure,
         )
 
     def _find_cover_image(

@@ -448,34 +448,15 @@ class VideoDownloader:
 
             logger.debug(f"yutto command: {' '.join(cmd[:5])}...")
 
-            # Run yutto download (subprocess is always safe, even in async context)
-            # Use asyncio.create_subprocess_exec if in async context for better integration
-            try:
-                # Check if we're in async context
-                asyncio.get_running_loop()
-                # In async context, use asyncio subprocess
-                logger.debug("Running yutto in async subprocess mode")
-                proc = asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                # This will be awaited by the caller, so we return a coroutine
-                # But this method is synchronous, so we use subprocess.run instead
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                )
-            except RuntimeError:
-                # No running loop, use subprocess.run
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=600,  # 10 minutes timeout
-                )
+            # Run yutto download using subprocess.run
+            # subprocess.run is always safe even in async context because this method
+            # is called from a thread pool (via execute's run_in_executor)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minutes timeout
+            )
 
             if result.returncode != 0:
                 logger.error(f"yutto failed: {result.stderr[:500]}")

@@ -36,6 +36,7 @@ class FeishuPublishTestResponse(BaseModel):
     message: str = Field(description="Publish status")
     node_token: str | None = Field(default=None, description="Published wiki node token")
     document_id: str | None = Field(default=None, description="Published document id")
+    url: str | None = Field(default=None, description="Published document URL")
 
 
 @router.get("/health")
@@ -182,15 +183,18 @@ async def publish_feishu_test_document():
     )
 
     try:
-        success = adapter.push_content(payload.model_dump(mode="json"))
-        if not success:
+        result = adapter.push_content(payload.model_dump(mode="json"))
+        if not result.success:
             return FeishuPublishTestResponse(
                 success=False,
-                message="Feishu adapter did not publish the test document",
+                message=result.message,
             )
         return FeishuPublishTestResponse(
             success=True,
-            message="Feishu test document submitted successfully",
+            message=result.message,
+            node_token=result.node_token,
+            document_id=result.document_id,
+            url=result.url,
         )
     except Exception as exc:
         return FeishuPublishTestResponse(

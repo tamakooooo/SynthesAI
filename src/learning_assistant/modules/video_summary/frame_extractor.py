@@ -56,7 +56,7 @@ class FrameExtractor:
         self,
         output_dir: Path | None = None,
         output_format: str = "jpg",
-        quality: int = 85,
+        quality: int = 95,  # Higher quality for better screenshots
     ) -> None:
         """
         Initialize FrameExtractor.
@@ -64,7 +64,7 @@ class FrameExtractor:
         Args:
             output_dir: Output directory for extracted frames (default: data/frames)
             output_format: Image format (jpg or png)
-            quality: Image quality for JPEG (1-100)
+            quality: Image quality for JPEG (1-100, higher = better quality)
 
         Raises:
             RuntimeError: If FFmpeg is not available
@@ -195,6 +195,11 @@ class FrameExtractor:
             )
 
         # Build FFmpeg command
+        # Convert user quality (1-100, higher = better) to ffmpeg quality (2-31, lower = better)
+        # ffmpeg q:v=2 is best quality, q:v=31 is worst
+        # Formula: ffmpeg_q = 32 - round(user_quality * 31 / 100)
+        ffmpeg_quality = max(2, 32 - int(self.quality * 31 / 100))
+
         cmd = [
             "ffmpeg",
             "-ss",
@@ -204,7 +209,7 @@ class FrameExtractor:
             "-frames:v",
             "1",  # Extract only 1 frame
             "-q:v",
-            str(self.quality),  # JPEG quality
+            str(ffmpeg_quality),  # JPEG quality (ffmpeg scale: 2=best, 31=worst)
             "-y",  # Overwrite output
             str(output_path),
         ]

@@ -84,6 +84,11 @@ class AgentAPI:
         self.config_manager = ConfigManager(config_dir=config_dir)
         self.config_manager.load_all()
 
+        # 初始化事件总线
+        from learning_assistant.core.event_bus import EventBus
+
+        self.event_bus = EventBus()
+
         # 初始化插件管理器
         plugin_dirs = [
             config_dir.parent / "src" / "learning_assistant" / "modules",
@@ -98,15 +103,49 @@ class AgentAPI:
             if plugin_metadata.enabled:
                 self.plugin_manager.load_plugin(plugin_metadata.name)
 
+        # 初始化适配器并订阅事件
+        self._initialize_adapters()
+
         # 初始化历史记录管理器
         self.history_manager = HistoryManager()
 
-        # 初始化事件总线
-        from learning_assistant.core.event_bus import EventBus
-
-        self.event_bus = EventBus()
-
         logger.success("AgentAPI initialized successfully")
+
+    def _initialize_adapters(self) -> None:
+        """Initialize adapters and subscribe to events."""
+        adapters_config = self.config_manager.adapters_model
+        if not adapters_config:
+            logger.warning("No adapters configuration found")
+            return
+
+        # Initialize Feishu adapter if enabled
+        feishu_adapter_config = adapters_config.feishu
+        if feishu_adapter_config and feishu_adapter_config.enabled:
+            try:
+                from learning_assistant.adapters.feishu.adapter import FeishuKnowledgeBaseAdapter
+
+                adapter = FeishuKnowledgeBaseAdapter()
+                # Build adapter config: pass the nested 'config' dict directly
+                # also include 'enabled' and subscriptions from event_bus if available
+                adapter_config_dict = {
+                    "enabled": feishu_adapter_config.enabled,
+                    "config": feishu_adapter_config.config,  # This is the inner config dict
+                }
+                # Add subscriptions from event_bus configuration
+                event_bus_config = adapters_config.event_bus
+                if event_bus_config and event_bus_config.subscriptions:
+                    feishu_subs = event_bus_config.subscriptions.get("feishu", [])
+                    if feishu_subs:
+                        adapter_config_dict["subscriptions"] = feishu_subs
+
+                adapter.initialize(adapter_config_dict, self.event_bus)
+                # Store adapter reference for manual publishing
+                self._feishu_adapter = adapter
+                logger.info(f"Feishu adapter initialized and subscribed to events, config={feishu_adapter_config.config}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Feishu adapter: {e}")
+        else:
+            self._feishu_adapter = None
 
     @classmethod
     def create_with_api_key(
@@ -271,14 +310,15 @@ class AgentAPI:
             return VideoSummaryResult(
                 status="success",
                 url=url,
-                title=result.get("metadata", {}).get("title", "Unknown"),
+                title=result.get("video_info", {}).get("title", "Unknown"),
                 summary=result.get("summary", {}),
                 transcript=result.get("transcript", ""),
                 files={
                     "summary_path": result.get("summary_path"),
                     "subtitle_path": result.get("subtitle_path"),
                 },
-                metadata=result.get("metadata", {}),
+                feishu_url=result.get("feishu_url"),
+                metadata=result.get("video_info", {}),
                 timestamp=datetime.now().isoformat(),
             )
 

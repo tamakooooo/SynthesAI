@@ -224,29 +224,34 @@
 
 ## [未来版本]
 
-### [0.4.0] - 计划中
+### [0.4.0] - 待发布
 
-#### 新增
-- 🚀 飞书适配器完整实现
-- 📝 思源笔记适配器
-- 📊 单词学习进度追踪
-- 🎯 词汇测验功能
+#### 已实现功能
+- ✅ 飞书知识库发布完整实现
+  - FeishuKnowledgeBaseAdapter、FeishuWikiClient、FeishuDocClient
+  - 支持 video_summary、link_learning、vocabulary 三模块
+- ✅ Web UI 完整实现（8个页面）
+  - ConfigPage、VideoPage、LinkPage、VocabularyPage
+  - HistoryPage、SettingsPage、LoginPage、StatisticsPage
+- ✅ 配置系统完善（settings.yaml + settings.local.yaml）
+- ✅ B站 cookie API 验证（调用 nav API 确认有效性，获取用户名）
+- ✅ Web UI 飞书测试发布结果详细展示（node_token、document_id、成功/失败状态）
+- ✅ 集成测试完善
+  - tests/auth/test_bilibili_auth.py（10个测试）
+  - tests/server/test_routes.py（8个测试）
+  - tests/adapters/test_feishu_adapter.py（11个测试）
 
-### [0.5.0] - 计划中
+### [0.5.0] - 功能增强
 
-#### 新增
-- Obsidian 适配器
-- 批量处理功能
-- 学习路径推荐
-- Web UI（可选）
+#### 新增功能
+- 🚀 FasterWhisperASR 本地转录引擎（离线支持）
+- 🚀 更多视频平台支持（抖音、YouTube 优化）
+- 🚀 知识卡片模板多样化
 
-### [1.0.0] - 长期规划
-
-#### 新增
-- 插件市场
-- 社区插件支持
-- 多语言界面
-- 企业级功能
+#### 稳定性改进
+- 🔧 错误恢复机制（自动重试、降级策略）
+- 🔧 下载超时处理增强
+- 🔧 日志和诊断工具完善
 
 ---
 

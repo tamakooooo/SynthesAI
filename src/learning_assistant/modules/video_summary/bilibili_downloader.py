@@ -618,11 +618,11 @@ class BilibiliDownloader:
             bvid = match.group(0)
             logger.info(f"Downloading B站 video (sync fallback): {bvid}")
 
-            # Use sync client
+            # Use sync client with longer timeout for unstable network
             sync_client = httpx.Client(
                 headers=self.HEADERS,
                 cookies={"SESSDATA": self.sessdata} if self.sessdata else None,
-                timeout=httpx.Timeout(30.0, connect=10.0),
+                timeout=httpx.Timeout(180.0, connect=60.0),  # Increased timeout for CDN issues
                 follow_redirects=True,
             )
 
@@ -664,43 +664,81 @@ class BilibiliDownloader:
                 return None
 
             playurl_data = data["data"]
-            if "dash" not in playurl_data:
-                logger.error("DASH format not available")
-                sync_client.close()
-                return None
-
-            dash_data = playurl_data["dash"]
-            video_stream, audio_stream = self._select_best_streams(
-                dash_data, video_quality, audio_quality
-            )
 
             # Prepare output paths
             safe_title = re.sub(r'[<>:"/\\|?*]', "_", title)[:100]
-            temp_video = self.output_dir / f"{safe_title}_video.m4s"
-            temp_audio = self.output_dir / f"{safe_title}_audio.m4s"
             final_output = self.output_dir / f"{safe_title}.mp4"
 
-            # Download video (sync)
-            if not self._download_file_sync(sync_client, video_stream["url"], temp_video, "video stream"):
-                sync_client.close()
-                return None
+            # Try DASH format first (better quality), fallback to FLV/MP4 if not available
+            if "dash" in playurl_data:
+                dash_data = playurl_data["dash"]
+                video_stream, audio_stream = self._select_best_streams(
+                    dash_data, video_quality, audio_quality
+                )
 
-            # Download audio (sync)
-            if not self._download_file_sync(sync_client, audio_stream["url"], temp_audio, "audio stream"):
-                temp_video.unlink(missing_ok=True)
-                sync_client.close()
-                return None
+                temp_video = self.output_dir / f"{safe_title}_video.m4s"
+                temp_audio = self.output_dir / f"{safe_title}_audio.m4s"
 
-            # Merge with FFmpeg
-            if not self._merge_video_audio(temp_video, temp_audio, final_output):
+                # Download video (sync)
+                if not self._download_file_sync(sync_client, video_stream["url"], temp_video, "video stream"):
+                    sync_client.close()
+                    return None
+
+                # Download audio (sync)
+                if not self._download_file_sync(sync_client, audio_stream["url"], temp_audio, "audio stream"):
+                    temp_video.unlink(missing_ok=True)
+                    sync_client.close()
+                    return None
+
+                # Merge with FFmpeg
+                if not self._merge_video_audio(temp_video, temp_audio, final_output):
+                    temp_video.unlink(missing_ok=True)
+                    temp_audio.unlink(missing_ok=True)
+                    sync_client.close()
+                    return None
+
+                # Cleanup
                 temp_video.unlink(missing_ok=True)
                 temp_audio.unlink(missing_ok=True)
+
+            elif "durl" in playurl_data:
+                # Fallback to FLV/MP4 format (legacy)
+                logger.info("DASH not available, using FLV/MP4 format")
+                durl_list = playurl_data["durl"]
+                if not durl_list:
+                    logger.error("No download URL available")
+                    sync_client.close()
+                    return None
+
+                # Download the first URL (usually the full video in legacy format)
+                download_url = durl_list[0]["url"]
+                temp_output = self.output_dir / f"{safe_title}_temp.flv"
+
+                if not self._download_file_sync(sync_client, download_url, temp_output, "video"):
+                    sync_client.close()
+                    return None
+
+                # Convert to MP4 if needed
+                if temp_output.suffix == ".flv":
+                    import subprocess
+                    result = subprocess.run(
+                        ["ffmpeg", "-i", str(temp_output), "-c", "copy", str(final_output)],
+                        capture_output=True,
+                        timeout=60,
+                    )
+                    temp_output.unlink(missing_ok=True)
+                    if result.returncode != 0:
+                        logger.error(f"FFmpeg conversion failed: {result.stderr}")
+                        sync_client.close()
+                        return None
+                else:
+                    final_output = temp_output
+
+            else:
+                logger.error("No available video format (DASH or FLV)")
                 sync_client.close()
                 return None
 
-            # Cleanup
-            temp_video.unlink(missing_ok=True)
-            temp_audio.unlink(missing_ok=True)
             sync_client.close()
 
             if final_output.exists() and final_output.stat().st_size > 0:

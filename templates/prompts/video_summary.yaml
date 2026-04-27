@@ -93,6 +93,36 @@ output_schema:
       items:
         type: string
       description: Main topics covered
+    mindmap_structure:
+      type: object
+      description: Mindmap structure for visualization
+      properties:
+        root:
+          type: string
+          description: Root node topic (video main theme)
+        children:
+          type: array
+          items:
+            type: object
+            properties:
+              topic:
+                type: string
+                description: Level 1 node (main section)
+              children:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    subtopic:
+                      type: string
+                      description: Level 2 node (sub section)
+                    details:
+                      type: array
+                      items:
+                        type: string
+                      description: Level 3 nodes (specific points)
+          required: [topic]
+      required: [root, children]
   required: [title, summary, key_points, chapters]
 
 # System prompt
@@ -186,6 +216,35 @@ user_prompt: |
      - answer（字符串）：基于视频内容的准确解答
 
   6. **主题标签**（topics 字段，数组）：5-10个相关主题标签
+
+  7. **思维导图结构**（mindmap_structure 字段，对象）：用于可视化展示，包含：
+     - root（字符串）：根节点主题，使用视频标题或核心主题
+     - children（数组）：3-6个一级节点，每个一级节点包含：
+       - topic（字符串）：章节/板块标题（对应主要章节）
+       - children（数组）：2-4个二级节点，每个二级节点包含：
+         - subtopic（字符串）：具体内容点
+         - details（数组，可选）：更细的细节点（字符串数组）
+
+     示例：
+     {
+       "root": "Python异步编程",
+       "children": [
+         {
+           "topic": "基础概念",
+           "children": [
+             {"subtopic": "异步vs同步差异"},
+             {"subtopic": "事件循环机制"}
+           ]
+         },
+         {
+           "topic": "实践应用",
+           "children": [
+             {"subtopic": "异步爬虫案例"},
+             {"subtopic": "并发控制技巧"}
+           ]
+         }
+       ]
+     }
 
   **重要**：输出必须是完整的、合法的 JSON 对象，所有字段名使用英文，章节和关键要点使用数组格式（方括号 []）。
 

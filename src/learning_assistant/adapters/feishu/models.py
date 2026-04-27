@@ -23,6 +23,7 @@ class FeishuKnowledgeBaseConfig(BaseModel):
     overwrite_strategy: str = "create_new"
     title_template: str = "{module} | {title}"
     subscriptions: list[str] = Field(default_factory=list)
+    space_domain: str = ""  # Feishu space domain for URL generation (e.g., "yn9l1n0vua")
 
 
 class FeishuPublishResult(BaseModel):
@@ -32,6 +33,7 @@ class FeishuPublishResult(BaseModel):
     message: str
     node_token: str | None = None
     document_id: str | None = None
+    url: str | None = None  # Published document URL
     raw_response: dict[str, Any] = Field(default_factory=dict)
 
 

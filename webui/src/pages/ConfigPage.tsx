@@ -52,6 +52,12 @@ const ConfigPage: React.FC = () => {
   const [testing, setTesting] = useState(false);
   const [checkingFeishu, setCheckingFeishu] = useState(false);
   const [publishingFeishuTest, setPublishingFeishuTest] = useState(false);
+  const [feishuPublishResult, setFeishuPublishResult] = useState<{
+    success: boolean;
+    message: string;
+    node_token?: string | null;
+    document_id?: string | null;
+  } | null>(null);
   const [fetchingModelsFor, setFetchingModelsFor] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [feishuCheck, setFeishuCheck] = useState<FeishuCheckResult | null>(null);
@@ -162,11 +168,18 @@ const ConfigPage: React.FC = () => {
   async function handleFeishuPublishTest() {
     setPublishingFeishuTest(true);
     setMessage(null);
+    setFeishuPublishResult(null);
     try {
       const result = await publishFeishuTestDocument();
+      setFeishuPublishResult(result);
       setMessage(result.message);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '飞书测试发布失败');
+      const errorResult = {
+        success: false,
+        message: error instanceof Error ? error.message : '飞书测试发布失败',
+      };
+      setFeishuPublishResult(errorResult);
+      setMessage(errorResult.message);
     } finally {
       setPublishingFeishuTest(false);
     }
@@ -663,6 +676,34 @@ const ConfigPage: React.FC = () => {
               <p>Token 验证：{feishuCheck.token_verified ? '成功' : '未验证/失败'}</p>
               <p>知识库可访问：{feishuCheck.space_accessible ? '是' : '否'}</p>
               <p>根节点可访问：{feishuCheck.root_node_accessible ? '是' : '否'}</p>
+            </div>
+          )}
+
+          {feishuPublishResult && (
+            <div className={`rounded-md border p-md text-sm ${
+              feishuPublishResult.success
+                ? 'border-green-500 bg-green-50 text-green-700'
+                : 'border-red-500 bg-red-50 text-red-700'
+            }`}>
+              <p className="font-medium">
+                {feishuPublishResult.success ? '✅ 测试发布成功' : '❌ 测试发布失败'}
+              </p>
+              <p>{feishuPublishResult.message}</p>
+              {feishuPublishResult.success && feishuPublishResult.node_token && (
+                <p className="mt-xs">
+                  文档节点: <code className="rounded bg-white px-xs py-xs">{feishuPublishResult.node_token}</code>
+                </p>
+              )}
+              {feishuPublishResult.success && feishuPublishResult.document_id && (
+                <p className="mt-xs">
+                  文档 ID: <code className="rounded bg-white px-xs py-xs">{feishuPublishResult.document_id}</code>
+                </p>
+              )}
+              {feishuPublishResult.success && (
+                <p className="mt-md text-xs text-green-600">
+                  请在飞书知识库中查看测试文档，确认发布流程正常
+                </p>
+              )}
             </div>
           )}
         </div>

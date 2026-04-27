@@ -36,6 +36,7 @@ class BilibiliAuthProvider(BaseAuthProvider):
         "https://passport.bilibili.com/x/passport-login/web/qrcode/generate"
     )
     API_POLL_STATUS = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll"
+    API_USER_INFO = "https://api.bilibili.com/x/web-interface/nav"
 
     # Bilibili domain for cookies
     BILIBILI_DOMAIN = ".bilibili.com"
@@ -174,13 +175,22 @@ class BilibiliAuthProvider(BaseAuthProvider):
             )
             user_id = dedeuserid_cookie.value if dedeuserid_cookie else None
 
-            # TODO: Validate cookies by calling Bilibili API
-            # For now, assume valid if all essential cookies exist
+            # Validate cookies by calling Bilibili API
+            is_valid, username = self._validate_cookies(cookies)
+
+            if not is_valid:
+                return AuthInfo(
+                    platform="bilibili",
+                    status=AuthStatus.EXPIRED,
+                    user_id=user_id,
+                    cookie_file=str(cookie_file),
+                )
 
             return AuthInfo(
                 platform="bilibili",
                 status=AuthStatus.AUTHENTICATED,
                 user_id=user_id,
+                username=username,
                 cookie_file=str(cookie_file),
             )
 
@@ -525,3 +535,60 @@ class BilibiliAuthProvider(BaseAuthProvider):
 
         logger.info(f"Extracted {len(cookies)} cookies from login response")
         return cookies
+
+    def _validate_cookies(self, cookies: list[CookieData]) -> tuple[bool, str | None]:
+        """
+        Validate cookies by calling Bilibili user info API.
+
+        Args:
+            cookies: List of cookies to validate
+
+        Returns:
+            Tuple of (is_valid, username)
+        """
+        try:
+            # Build cookie string for request
+            cookie_str = "; ".join(f"{c.name}={c.value}" for c in cookies)
+
+            # Call Bilibili nav API to verify login status
+            headers = {
+                "User-Agent": self.HEADERS["User-Agent"],
+                "Referer": "https://www.bilibili.com/",
+                "Cookie": cookie_str,
+            }
+
+            response = requests.get(
+                self.API_USER_INFO,
+                headers=headers,
+                timeout=10,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+
+            # Check API response
+            if data.get("code") != 0:
+                logger.warning(f"Bilibili API returned error: {data.get('message')}")
+                return False, None
+
+            # Check if user is logged in
+            nav_data = data.get("data", {})
+            is_login = nav_data.get("isLogin", False)
+
+            if not is_login:
+                logger.warning("Bilibili cookies expired or invalid")
+                return False, None
+
+            # Extract username
+            username = nav_data.get("uname")
+            user_id = nav_data.get("mid")
+
+            logger.info(f"Bilibili cookies valid for user: {username} (ID: {user_id})")
+            return True, username
+
+        except requests.RequestException as e:
+            logger.error(f"Failed to validate Bilibili cookies: {e}")
+            return False, None
+        except Exception as e:
+            logger.error(f"Unexpected error validating cookies: {e}")
+            return False, None

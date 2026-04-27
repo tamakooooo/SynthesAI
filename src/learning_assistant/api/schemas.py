@@ -73,6 +73,14 @@ class VideoSummaryResult(BaseModel):
             "display_priority": "medium",
         },
     )
+    feishu_url: str | None = Field(
+        default=None,
+        description="飞书文档链接",
+        json_schema_extra={
+            "agent_hint": "飞书知识库文档链接，可直接分享给用户",
+            "display_priority": "high",
+        },
+    )
     metadata: dict[str, Any] = Field(
         description="视频元数据",
         examples=[{"duration": 900, "platform": "bilibili", "uploader": "UP主"}],
