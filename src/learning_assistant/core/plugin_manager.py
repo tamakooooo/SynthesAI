@@ -5,6 +5,7 @@ This module handles discovery, loading, and management of plugins (modules and a
 """
 
 import importlib.util
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -234,6 +235,10 @@ class PluginManager:
         """
         Check if plugin dependencies are satisfied.
 
+        Dependencies can be:
+        1. Python packages (e.g., "trafilatura>=1.6.0", "aiohttp>=3.9.0")
+        2. Other plugins (e.g., "core_module", "base_adapter")
+
         Args:
             plugin: Plugin metadata
 
@@ -246,23 +251,75 @@ class PluginManager:
 
         logger.debug(f"Checking dependencies for {plugin.name}: {plugin.dependencies}")
 
-        for dep_name in plugin.dependencies:
-            # Check if dependency is discovered
-            if dep_name not in self.plugins:
-                logger.error(
-                    f"Plugin {plugin.name} depends on {dep_name}, but {dep_name} not found"
-                )
-                return False
+        for dep_spec in plugin.dependencies:
+            # Determine if this is a Python package or a plugin dependency
+            # Package specs contain version operators like >=, <=, ==, ~=, !=, >
+            is_package_dep = bool(re.search(r"[><=!~]", dep_spec))
 
-            # Check if dependency is loaded
-            if dep_name not in self.loaded_plugins:
-                logger.error(
-                    f"Plugin {plugin.name} depends on {dep_name}, but {dep_name} not loaded"
-                )
-                return False
+            if is_package_dep:
+                # Check Python package availability
+                # Extract package name (strip version specifier)
+                pkg_name = re.split(r"[><=!~]", dep_spec)[0].strip()
+                # Normalize package name (replace - with _ for import)
+                import_name = pkg_name.replace("-", "_")
+
+                if not self._check_python_package(import_name, pkg_name):
+                    logger.error(
+                        f"Plugin {plugin.name} depends on Python package '{dep_spec}', "
+                        f"but it's not installed"
+                    )
+                    return False
+            else:
+                # Check if plugin dependency is discovered
+                if dep_spec not in self.plugins:
+                    logger.error(
+                        f"Plugin {plugin.name} depends on plugin '{dep_spec}', "
+                        f"but '{dep_spec}' not found"
+                    )
+                    return False
+
+                # Check if plugin dependency is loaded
+                if dep_spec not in self.loaded_plugins:
+                    logger.error(
+                        f"Plugin {plugin.name} depends on plugin '{dep_spec}', "
+                        f"but '{dep_spec}' not loaded"
+                    )
+                    return False
 
         logger.debug(f"All dependencies satisfied for {plugin.name}")
         return True
+
+    def _check_python_package(self, import_name: str, pkg_name: str) -> bool:
+        """
+        Check if a Python package is available for import.
+
+        Args:
+            import_name: Name to use for import check (normalized)
+            pkg_name: Original package name
+
+        Returns:
+            True if package is available, False otherwise
+        """
+        # Try importlib.util.find_spec first
+        if importlib.util.find_spec(import_name) is not None:
+            return True
+
+        # Fallback: try actual import
+        try:
+            __import__(import_name)
+            return True
+        except ImportError:
+            pass
+
+        # Try original package name as fallback (some packages have different import names)
+        if pkg_name != import_name:
+            try:
+                __import__(pkg_name)
+                return True
+            except ImportError:
+                pass
+
+        return False
 
     def check_command_conflicts(self, plugin: PluginMetadata) -> list[str]:
         """
