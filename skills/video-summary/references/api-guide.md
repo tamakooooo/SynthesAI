@@ -139,7 +139,7 @@ metadata = {
 **Features**:
 - Full support
 - Best transcription quality for Chinese
-- Free via BcutASR
+- Free ASR via VideoCaptioner (bijian/jianying)
 
 **Cookie**:
 ```python
@@ -187,6 +187,43 @@ result = await summarize_video(
 - Basic support
 - May need cookie for some videos
 - Transcription quality varies
+
+---
+
+## ASR Engines
+
+Video Summary supports multiple ASR (speech recognition) engines:
+
+### VideoCaptioner (默认, 免费)
+
+VideoCaptioner CLI provides free ASR backends:
+
+| Backend | Description | Notes |
+|---------|-------------|-------|
+| `bijian` | B站必剪 | 免费, 推荐中文视频 |
+| `jianying` | 剪映 | 免费 |
+| `faster-whisper` | 本地模型 | 免费, 需下载模型 |
+
+**Installation**:
+```bash
+pip install videocaptioner
+```
+
+### SiliconCloud (付费, 高质量)
+
+SiliconCloud API provides high-quality ASR:
+
+| Model | Description | Notes |
+|-------|-------------|-------|
+| `TeleAI/TeleSpeechASR` | 电信AI | 默认, 高质量 |
+| `FunAudioLLM/SenseVoiceSmall` | SenseVoice | 多语言支持 |
+
+**Setup**:
+```bash
+export SILICONCLOUD_API_KEY="sk-..."
+```
+
+Get API key: https://cloud.siliconflow.cn/account/ak
 
 ---
 
@@ -239,6 +276,9 @@ export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 export DEEPSEEK_API_KEY="sk-..."
 
+# ASR API Keys (optional)
+export SILICONCLOUD_API_KEY="sk-..."
+
 # Optional
 export LEARNING_ASSISTANT_LOG_LEVEL="DEBUG"
 export LEARNING_ASSISTANT_CONFIG_DIR="config"
@@ -252,7 +292,9 @@ export LEARNING_ASSISTANT_CONFIG_DIR="config"
 modules:
   video_summary:
     enabled: true
-    transcriber: "bcut"
+    transcriber: "videocaptioner"  # 免费 (推荐)
+    # transcriber: "siliconcloud"   # 付费 (高质量)
+    asr_engine: "bijian"            # videocaptioner backend
     export_format: "markdown"
     cookie_file: "./data/cookies/bilibili.txt"
 ```
@@ -316,9 +358,22 @@ result = await summarize_video(
 **Error**: `TranscriptionError: Rate limit exceeded`
 
 **Solution**:
-- Wait a few minutes
-- Retry later
-- BcutASR has rate limits
+- Wait a few minutes and retry
+- Switch to different ASR engine:
+  - `videocaptioner` with `jianying` backend
+  - `siliconcloud` (requires API key)
+
+---
+
+### VideoCaptioner CLI Not Found
+
+**Error**: `RuntimeError: videocaptioner CLI not found`
+
+**Solution**:
+```bash
+pip install videocaptioner
+videocaptioner --version  # Verify
+```
 
 ---
 
@@ -345,6 +400,20 @@ result = await summarize_video(
 # Access word-level data
 for word in result["metadata"]["words"]:
     print(f"{word['text']}: {word['start']}-{word['end']}")
+```
+
+### Using SiliconCloud ASR
+
+```python
+from learning_assistant.modules.video_summary.transcriber import AudioTranscriber
+
+# High-quality transcription with SiliconCloud
+transcriber = AudioTranscriber(
+    engine="siliconcloud",
+    api_key="sk-...",  # or use env var SILICONCLOUD_API_KEY
+    model="TeleAI/TeleSpeechASR"
+)
+result = transcriber.transcribe("audio.mp3")
 ```
 
 ### Direct AgentAPI Access

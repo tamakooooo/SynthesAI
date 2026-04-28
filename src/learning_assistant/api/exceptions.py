@@ -97,7 +97,7 @@ class TranscriptionError(LearningAssistantError):
     当音频转录过程中出现错误时抛出。
 
     可能原因：
-    - BcutASR 服务不可用
+    - ASR 服务不可用
     - 音频质量问题
     - 频率限制
 

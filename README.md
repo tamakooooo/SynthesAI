@@ -66,6 +66,27 @@ yutto --version
 > - yt-dlp often fails with CDN timeout errors on B站
 > - yutto provides more stable downloads for B站 videos
 
+### ⚠️ Important: VideoCaptioner (For Free ASR)
+
+**VideoCaptioner provides free ASR backends for video transcription.**
+
+```bash
+# Install VideoCaptioner (免费语音转录)
+pip install videocaptioner
+
+# Verify installation
+videocaptioner --version
+```
+
+> **Free ASR Backends:**
+> - `bijian`: B站必剪 (免费, 推荐中文)
+> - `jianying`: 剪映 (免费)
+> - `faster-whisper`: 本地模型 (免费)
+
+> **Paid High-Quality Option:**
+> - `siliconcloud`: 硅基流动 API (付费, 高质量)
+> - Setup: `export SILICONCLOUD_API_KEY="sk-..."`
+
 ### Setup Configuration
 
 ```bash

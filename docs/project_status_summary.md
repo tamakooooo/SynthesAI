@@ -58,7 +58,7 @@
 |------|------|------|------|
 | VideoDownloader | `modules/video_summary/downloader.py` | ✅ | ✅ 25 tests |
 | AudioExtractor | `modules/video_summary/audio_extractor.py` | ✅ | ✅ 20 tests |
-| AudioTranscriber (BcutASR) | `modules/video_summary/transcriber/` | ✅ | ✅ 60 tests |
+| AudioTranscriber | `modules/video_summary/transcriber/` | ✅ | ✅ 60 tests |
 | VideoSummaryModule | `modules/video_summary/__init__.py` | ✅ | ✅ 30 tests |
 
 **总计**: 135 个视频总结测试
@@ -66,7 +66,7 @@
 **功能**:
 - ✅ 多平台下载（B站、YouTube、抖音）
 - ✅ 音频提取（FFmpeg）
-- ✅ 免费转录（BcutASR）
+- ✅ 免费转录（VideoCaptioner/SiliconCloud）
 - ✅ LLM 总结
 - ✅ 多格式导出（Markdown、PDF）
 - ✅ 多格式字幕（SRT、VTT、LRC、ASS）

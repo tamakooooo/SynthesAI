@@ -180,7 +180,8 @@ llm:
 modules:
   video_summary:
     enabled: true
-    transcriber: "bcut"
+    transcriber: "videocaptioner"  # 免费 (推荐)
+    asr_engine: "bijian"           # videocaptioner backend
     word_timestamps: false
     export_format: "markdown"
 
@@ -196,7 +197,9 @@ video_summary:
   output_dir: "data/outputs"
 
   # 转录配置
-  transcriber: "bcut"  # 使用 BcutASR（免费）
+  transcriber: "videocaptioner"  # 免费 (推荐)
+  asr_engine: "bijian"           # bijian/jianying/faster-whisper
+  # transcriber: "siliconcloud"   # 付费 (高质量)
   word_timestamps: false
 
   # 导出配置
@@ -328,7 +331,7 @@ la video https://example.com/video --subtitle-only --format srt
    ├─ 分离音频轨道
    └─ 转换为 MP3 格式
 
-3. 语音转录 (BcutASR)
+3. 语音转录 (VideoCaptioner/SiliconCloud)
    ├─ 上传音频文件
    ├─ 等待转录完成
    └─ 下载转录结果
@@ -474,14 +477,29 @@ ping www.bilibili.com
 
 **错误信息**:
 ```
-RuntimeError: BcutASR transcription failed: Rate limit exceeded
+RuntimeError: ASR transcription failed: Rate limit exceeded
 ```
 
 **解决方法**:
-- BcutASR 有频率限制，等待几分钟后重试
-- 或使用其他转录服务（将在后续版本支持）
+- ASR 服务有频率限制，等待几分钟后重试
+- 切换 ASR 后端:
+  - `bijian` → `jianying`
+  - 或使用 `siliconcloud` (付费高质量)
 
-#### 5. 内存不足
+#### 5. VideoCaptioner CLI 未找到
+
+**错误信息**:
+```
+RuntimeError: videocaptioner CLI not found
+```
+
+**解决方法**:
+```bash
+pip install videocaptioner
+videocaptioner --version  # 验证安装
+```
+
+#### 6. 内存不足
 
 **错误信息**:
 ```

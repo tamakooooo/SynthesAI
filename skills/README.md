@@ -1,15 +1,15 @@
 # Learning Assistant Skills
 
 > **Version**: v0.3.2
-> **Last Updated**: 2026-04-27
+> **Last Updated**: 2026-04-28
 
 Claude Code Skills for Learning Assistant - standardized, reusable capabilities following the Claude Code Skills Specification (2026).
 
 ---
 
-## ⚠️ Prerequisites: yutto Installation (Required for B站 Videos)
+## ⚠️ Prerequisites
 
-**Before using video-summary for B站 videos, install yutto:**
+### yutto (Required for B站 Videos)
 
 ```bash
 pip install yutto>=2.2.0
@@ -22,10 +22,18 @@ yutto --version  # Verify installation
 | **YouTube** | yt-dlp | Built-in |
 | **抖音** | yt-dlp | Built-in |
 
-> **Why yutto is mandatory for B站:**
-> - B站 videos require WBI signature (yutto handles automatically)
-> - yt-dlp often fails with SSL/CDN timeout errors
-> - yutto provides stable, authenticated downloads
+### VideoCaptioner (For Free ASR)
+
+```bash
+pip install videocaptioner
+videocaptioner --version  # Verify installation
+```
+
+| ASR Backend | Description | Cost |
+|-------------|-------------|------|
+| `bijian` | B站必剪 | 免费 |
+| `jianying` | 剪映 | 免费 |
+| `faster-whisper` | 本地模型 | 免费 |
 
 ---
 
@@ -53,6 +61,32 @@ Skills are modular, reusable capabilities packaged as standardized `SKILL.md` fi
 | [list-skills](list-skills/SKILL.md) | Lists all available skills | `/api/v1/skills` | ✅ Available |
 | [learning-history](learning-history/SKILL.md) | Queries learning history | `/api/v1/history` | ✅ Available |
 | [synthesai](synthesai/SKILL.md) | Hermes Agent integration guide | - | ✅ Available |
+
+---
+
+## ASR Engines
+
+Video transcription supports multiple engines:
+
+| Engine | Type | Cost | Quality | Recommended |
+|--------|------|------|---------|-------------|
+| **videocaptioner** | CLI | 免费 | 高 | ✅ Default |
+| **siliconcloud** | API | 付费 | 极高 | High quality |
+| **faster_whisper** | 本地 | 免费 | 中 | Offline |
+
+**Configuration**:
+```yaml
+modules:
+  video_summary:
+    transcriber: "videocaptioner"  # 免费 (推荐)
+    asr_engine: "bijian"           # videocaptioner backend
+```
+
+**SiliconCloud Setup** (付费高质量):
+```bash
+export SILICONCLOUD_API_KEY="sk-..."
+```
+Get API key: https://cloud.siliconflow.cn/account/ak
 
 ---
 

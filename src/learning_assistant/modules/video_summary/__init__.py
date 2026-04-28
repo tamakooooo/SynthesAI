@@ -173,7 +173,7 @@ class VideoSummaryModule(BaseModule):
 
         # Audio transcriber
         self.transcriber = AudioTranscriber(
-            engine=self.config.get("transcriber", "bcut"),
+            engine=self.config.get("transcriber", "videocaptioner"),
             use_cache=True,
             need_word_time_stamp=self.config.get("word_timestamps", False),
         )

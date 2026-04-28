@@ -21,7 +21,7 @@
 #### 1. 视频总结模块 (158 个测试)
 - ✅ 视频下载 (yt-dlp)
 - ✅ 音频提取 (FFmpeg)
-- ✅ 语音转录 (BcutASR/Whisper)
+- ✅ 语音转录 (VideoCaptioner/SiliconCloud)
 - ✅ LLM 总结
 - ✅ 多格式导出 (Markdown/PDF)
 - ✅ 多格式字幕 (SRT/VTT/LRC/ASS)

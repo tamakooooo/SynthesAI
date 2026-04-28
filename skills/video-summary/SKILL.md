@@ -10,7 +10,7 @@ description: |
   - Requests video learning notes or transcripts
   - Needs B站 authentication ("登录B站", "扫码登录")
 metadata:
-  version: 1.3.0
+  version: 1.4.0
   author: Learning Assistant Team
   hermes:
     platforms: [cli, telegram, discord, slack, matrix, signal, weixin]
@@ -39,6 +39,20 @@ pip install yutto>=2.2.0
 > - B站 videos require WBI signature (yutto handles automatically)
 > - yt-dlp often fails with SSL/CDN timeout errors
 > - yutto provides stable, authenticated downloads
+
+## ⚠️ Prerequisites: VideoCaptioner (For Free ASR)
+
+**For free transcription, install VideoCaptioner:**
+
+```bash
+pip install videocaptioner
+```
+
+| ASR Backend | Description | Cost |
+|-------------|-------------|------|
+| `bijian` | B站必剪 | 免费 |
+| `jianying` | 剪映 | 免费 |
+| `faster-whisper` | 本地模型 | 免费 |
 
 ## 🔐 B站 Authentication (Required for Some Videos)
 
@@ -187,6 +201,22 @@ GET /api/v1/video/{task_id}/result
 - B站
 - YouTube
 - 抖音
+
+## ASR Engines
+
+| Engine | Type | Cost | Quality |
+|--------|------|------|---------|
+| **videocaptioner** (默认) | CLI | 免费 | 高 |
+| **siliconcloud** | API | 付费 | 极高 |
+| **faster_whisper** | 本地 | 免费 | 中 |
+
+**Configuration**:
+```yaml
+modules:
+  video_summary:
+    transcriber: "videocaptioner"  # 免费
+    asr_engine: "bijian"           # videocaptioner backend
+```
 
 ## Execution Flow
 
