@@ -102,13 +102,36 @@ class VideoCaptionerASR(BaseASR):
         Returns:
             CLI path or raises RuntimeError
         """
-        # Try common locations
-        candidates = ["videocaptioner", "python -m videocaptioner"]
+        import sys
 
-        for candidate in candidates:
+        # Try common locations including virtual environments
+        candidates = [
+            "videocaptioner",
+            "python -m videocaptioner",
+        ]
+
+        # Add virtual environment paths
+        venv_candidates = []
+
+        # Current Python's bin directory (if in venv)
+        python_bin = Path(sys.executable).parent
+        venv_candidates.append(str(python_bin / "videocaptioner"))
+
+        # Common virtual environment names
+        for venv_name in [".venv", ".venv-py312", "venv", "env"]:
+            venv_path = Path(venv_name)
+            if venv_path.exists():
+                venv_candidates.append(str(venv_path / "bin" / "videocaptioner"))
+
+        # Combine all candidates
+        all_candidates = venv_candidates + candidates
+
+        for candidate in all_candidates:
             try:
+                # Handle "python -m" style commands
+                cmd = candidate.split() if " " in candidate else [candidate]
                 result = subprocess.run(
-                    candidate.split() + ["--help"],
+                    cmd + ["--help"],
                     capture_output=True,
                     timeout=10,
                 )

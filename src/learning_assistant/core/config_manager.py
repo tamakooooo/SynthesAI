@@ -122,10 +122,13 @@ class ConfigManager:
         """
         Get LLM provider configuration with API key resolution.
 
+        Supports both flat format (recommended) and nested format (legacy).
+
         API key priority:
-        1. Environment variable (highest priority)
-        2. Configuration file (api_key field in settings.yaml or settings.local.yaml)
-        3. None (if not found)
+        1. Environment variable OPENAI_API_KEY (highest priority)
+        2. Flat config: llm.api_key in settings.local.yaml
+        3. Nested config: llm.providers.{provider}.api_key
+        4. None (if not found)
 
         Args:
             provider: Provider name (openai, anthropic, deepseek)
@@ -135,7 +138,7 @@ class ConfigManager:
             LLM provider configuration dict with API key resolved
 
         Raises:
-            ValueError: If provider not found or settings not loaded
+            ValueError: If settings not loaded
         """
         if not self.settings_model:
             raise ValueError("Settings not loaded. Call load_all() first.")
@@ -144,54 +147,64 @@ class ConfigManager:
         if provider is None:
             provider = self.settings_model.llm.default_provider
 
-        # Get provider config
-        if provider not in self.settings_model.llm.providers:
-            raise ValueError(f"Provider '{provider}' not found in configuration")
+        # Build config dict with priority: flat format > nested format
+        config_dict: dict[str, Any] = {}
 
-        provider_config = self.settings_model.llm.providers[provider]
+        # 1. Try flat format first (recommended)
+        flat_config = self.settings_model.llm
+        if flat_config.api_key or flat_config.base_url:
+            config_dict = {
+                "api_key": flat_config.api_key,
+                "base_url": flat_config.base_url,
+                "default_model": flat_config.default_model,
+                "models": flat_config.models,
+                "timeout": flat_config.timeout,
+                "max_retries": flat_config.max_retries,
+            }
+            logger.debug(f"Using flat LLM config format")
 
-        # Convert to dict
-        config_dict = provider_config.model_dump()
+        # 2. Fall back to nested format if available
+        elif provider in self.settings_model.llm.providers:
+            provider_config = self.settings_model.llm.providers[provider]
+            config_dict = provider_config.model_dump()
+            logger.debug(f"Using nested LLM config format for provider: {provider}")
 
-        # Resolve API key with priority: env var > ${ENV_VAR} syntax > config file > None
+        # Resolve API key with priority: env var > config file
         api_key = None
 
         # 1. Try environment variable first (highest priority)
-        api_key_env = provider_config.api_key_env
-        if api_key_env:
-            api_key = os.environ.get(api_key_env)
-            if api_key:
-                logger.debug(
-                    f"API key for {provider} loaded from environment variable: {api_key_env}"
-                )
+        # Check flat config's implicit env var OR nested config's api_key_env
+        api_key_env = "OPENAI_API_KEY"  # Default for flat format
+        if provider in self.settings_model.llm.providers:
+            nested_config = self.settings_model.llm.providers[provider]
+            if nested_config.api_key_env:
+                api_key_env = nested_config.api_key_env
 
-        # 2. Try config file api_key field (supports ${ENV_VAR} syntax)
-        if not api_key and provider_config.api_key:
-            config_api_key = provider_config.api_key
+        api_key = os.environ.get(api_key_env)
+        if api_key:
+            logger.debug(f"API key loaded from environment: {api_key_env}")
+
+        # 2. Try config file (flat api_key or nested api_key)
+        if not api_key and config_dict.get("api_key"):
+            config_api_key = config_dict["api_key"]
             # Check if it's an environment variable reference like "${OPENAI_API_KEY}"
             if config_api_key.startswith("${") and config_api_key.endswith("}"):
-                env_var_name = config_api_key[2:-1]  # Extract variable name
+                env_var_name = config_api_key[2:-1]
                 api_key = os.environ.get(env_var_name)
                 if api_key:
-                    logger.debug(
-                        f"API key for {provider} loaded from ${env_var_name} reference"
-                    )
-                else:
-                    logger.warning(
-                        f"Environment variable {env_var_name} not set for API key"
-                    )
+                    logger.debug(f"API key loaded from ${env_var_name} reference")
             else:
-                # Direct API key value (not recommended but supported)
+                # Direct API key value
                 api_key = config_api_key
-                logger.debug(f"API key for {provider} loaded from configuration file")
+                logger.debug(f"API key loaded from config file")
 
-        # 3. Set api_key in config dict
+        # 3. Update config_dict with resolved api_key
         if api_key:
             config_dict["api_key"] = api_key
         else:
             logger.warning(
-                f"API key for {provider} not found. "
-                f"Set {api_key_env} environment variable or add 'api_key' to settings.yaml"
+                f"API key not found. Set OPENAI_API_KEY environment variable "
+                f"or add 'api_key' to config/settings.local.yaml"
             )
             config_dict["api_key"] = None
 
@@ -478,8 +491,22 @@ class CostTrackingConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    """LLM configuration."""
+    """LLM configuration - simplified flat format.
 
+    Supports both:
+    1. Flat format (recommended): api_key, base_url, default_model at top level
+    2. Nested format (legacy): providers.{provider_name}.{config}
+    """
+
+    # Flat format (recommended)
+    api_key: str | None = None
+    base_url: str | None = None
+    default_model: str = "gpt-4"
+    models: list[str] = Field(default_factory=lambda: ["gpt-4", "gpt-4o"])
+    timeout: int = 60
+    max_retries: int = 3
+
+    # Legacy nested format support
     default_provider: str = "openai"
     providers: dict[str, LLMProviderConfig] = Field(default_factory=dict)
     cost_tracking: CostTrackingConfig = CostTrackingConfig()
