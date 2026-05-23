@@ -1,418 +1,442 @@
-"""
-Feishu wiki API client.
-"""
+"""Feishu wiki publish orchestration."""
 
-import os
+from __future__ import annotations
+
 import time
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-import requests
 from loguru import logger
 
+from learning_assistant.adapters.feishu._base import FeishuBaseClient
+from learning_assistant.adapters.feishu.doc_client import FeishuDocClient
+from learning_assistant.adapters.feishu.document_builder import (
+    BuildResult,
+    ImageData,
+    TableData,
+)
 from learning_assistant.adapters.feishu.models import (
     FeishuKnowledgeBaseConfig,
     FeishuPublishResult,
+    trim_raw_response,
+    truncate_title,
 )
+from learning_assistant.adapters.feishu.whiteboard_client import FeishuWhiteboardClient
 from learning_assistant.core.publishing.models import PublishPayload
 
 
-class FeishuWikiClient:
-    """Thin client for Feishu wiki node APIs."""
+class FeishuWikiClient(FeishuBaseClient):
+    """Orchestrate Feishu doc creation, content writing, wiki move."""
 
     def __init__(self, config: FeishuKnowledgeBaseConfig) -> None:
-        self.config = config
-        self.base_url = "https://open.feishu.cn/open-apis"
+        super().__init__(config)
+        self.doc_client = FeishuDocClient(config)
+        self.whiteboard_client = FeishuWhiteboardClient(config)
 
-    def publish(self, payload: PublishPayload, blocks: list[dict[str, Any]]) -> FeishuPublishResult:
-        """Create a docx file, upload images, create mindmap, move to wiki."""
+    # ── Public entry point ──────────────────────────────────────────────
+
+    def publish(
+        self,
+        payload: PublishPayload,
+        build_result: BuildResult,
+    ) -> FeishuPublishResult:
+        """Create docx, embed mindmap, upload images, fill tables, move to wiki."""
         token = self._get_tenant_access_token()
-        title = self.config.title_template.format(module=payload.module, title=payload.title)
+        raw_title = self.config.title_template.format(
+            module=payload.module, title=payload.title
+        )
+        title = truncate_title(raw_title)
+        if title != raw_title:
+            logger.info(f"Title truncated from {len(raw_title)} to {len(title)} chars")
 
-        # Step 1: Create docx document
-        from learning_assistant.adapters.feishu.doc_client import FeishuDocClient
-        doc_client = FeishuDocClient(self.config)
+        logger.info(
+            f"Publishing: {len(build_result.text_blocks)} text, "
+            f"{len(build_result.images)} images, {len(build_result.tables)} tables"
+        )
 
-        # Track images and tables with their position in original blocks
-        # Images should be inserted after the text block that precedes them
-        image_info = []  # (text_blocks_index_to_insert_after, image_path)
-        table_info = []  # (text_blocks_index_to_insert_after, table_data)
-        text_blocks = []
-
-        # First, separate blocks and track where each image/table should go
-        # The image/table should appear after the block immediately before it
-        text_block_count = 0  # Count of text blocks seen so far
-        for i, block in enumerate(blocks):
-            image_path = block.get("_image_path")
-            table_data = block.get("_table_data")
-            if image_path:
-                # This image should appear after the text block at position (text_block_count - 1)
-                # But if it's the first block, there's no preceding text block
-                if text_block_count > 0:
-                    preceding_text_idx = text_block_count - 1
-                else:
-                    preceding_text_idx = -1  # Insert at beginning
-                image_info.append((preceding_text_idx, image_path))
-            elif table_data and block.get("block_type") == 31:
-                # Table block - handle separately
-                if text_block_count > 0:
-                    preceding_text_idx = text_block_count - 1
-                else:
-                    preceding_text_idx = -1
-                table_info.append((preceding_text_idx, block))
-            else:
-                text_blocks.append(block)
-                text_block_count += 1
-
-        logger.info(f"Publishing {len(text_blocks)} text blocks, {len(image_info)} image blocks, {len(table_info)} table blocks")
-        for preceding_idx, img_path in image_info:
-            logger.debug(f"Image '{Path(img_path).name}' should appear after text block {preceding_idx}")
-
-        # Create document with text blocks only
-        doc_result = doc_client.publish_document(
-            token=token,
-            title=title,
-            blocks=text_blocks,
+        doc_result = self.doc_client.publish_document(
+            token=token, title=title, blocks=build_result.text_blocks
         )
         if not doc_result.success or not doc_result.document_id:
             return doc_result
 
         document_id = doc_result.document_id
 
-        # Step 2: Create mindmap in whiteboard if structure provided
-        mindmap_url = None
-        whiteboard_id = None
-        if payload.mindmap_structure:
-            try:
-                # Create whiteboard block in document
-                whiteboard_id = doc_client.create_whiteboard_block(token, document_id)
-                if whiteboard_id:
-                    # Wait for whiteboard initialization before creating nodes
-                    # Feishu whiteboard needs time to be ready after creation
-                    time.sleep(3)
-                    # Use whiteboard API to create mindmap nodes
-                    from learning_assistant.adapters.feishu.whiteboard_client import FeishuWhiteboardClient
-                    wb_client = FeishuWhiteboardClient(self.config)
-                    logger.debug(f"Creating mindmap with structure: {payload.mindmap_structure}")
-                    wb_client.create_mindmap_nodes(token, whiteboard_id, payload.mindmap_structure)
-                    # Build whiteboard URL
-                    mindmap_url = self._build_whiteboard_url(whiteboard_id)
-                    logger.info(f"Mindmap created in whiteboard: {whiteboard_id}")
+        self._embed_mindmap(token, document_id, payload)
+        offset_state = {"value": 0}
+        self._insert_images_safe(token, document_id, build_result.images, offset_state)
+        self._insert_tables_safe(token, document_id, build_result.tables, offset_state)
+
+        return self._finalize_wiki_move(token, document_id)
+
+    # ── Mindmap with fallback ───────────────────────────────────────────
+
+    def _embed_mindmap(
+        self,
+        token: str,
+        document_id: str,
+        payload: PublishPayload,
+    ) -> None:
+        structure = payload.mindmap_structure
+        if not structure:
+            return
+
+        try:
+            whiteboard_id = self.doc_client.create_whiteboard_block(token, document_id)
+            if not whiteboard_id:
+                raise RuntimeError("Whiteboard creation returned no id")
+
+            time.sleep(self.config.whiteboard_init_wait_seconds)
+            self.whiteboard_client.create_mindmap_nodes(token, whiteboard_id, structure)
+            logger.info(f"Mindmap rendered in whiteboard {whiteboard_id}")
+            return
+        except Exception as exc:
+            logger.warning(
+                f"Whiteboard mindmap failed ({exc}), falling back to inline blocks"
+            )
+
+        try:
+            fallback_blocks = self._mindmap_as_blocks(
+                structure, decorate=self.config.mindmap_inline_decorations
+            )
+            if fallback_blocks:
+                self.doc_client.append_blocks(
+                    token=token, document_id=document_id, blocks=fallback_blocks
+                )
+                logger.info(f"Mindmap rendered as {len(fallback_blocks)} inline blocks")
+        except Exception as exc:
+            logger.error(f"Mindmap inline fallback also failed: {exc}")
+
+    @staticmethod
+    def _mindmap_as_blocks(
+        structure: dict[str, Any],
+        *,
+        decorate: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Render mindmap as heading/bullet blocks (fallback when whiteboard fails).
+
+        decorate=True keeps emoji/box-drawing prefixes; pass False for plain text.
+        """
+        root = structure.get("root", "")
+        children = structure.get("children", [])
+
+        heading_text = "🧠 思维导图" if decorate else "思维导图"
+        root_prefix = "📌 " if decorate else ""
+        branch_prefix = "├─ " if decorate else ""
+        leaf_prefix = "• " if decorate else "- "
+
+        blocks: list[dict[str, Any]] = [
+            {
+                "block_type": 4,
+                "heading2": {
+                    "elements": [
+                        {"text_run": {"content": heading_text, "text_element_style": {}}}
+                    ]
+                },
+            }
+        ]
+        if root:
+            blocks.append(
+                {
+                    "block_type": 5,
+                    "heading3": {
+                        "elements": [
+                            {
+                                "text_run": {
+                                    "content": f"{root_prefix}{root}",
+                                    "text_element_style": {},
+                                }
+                            }
+                        ]
+                    },
+                }
+            )
+
+        for child in children:
+            if isinstance(child, str):
+                topic, sub_children = child, []
+            elif isinstance(child, dict):
+                topic = child.get("topic", "")
+                sub_children = child.get("children", [])
+            else:
+                continue
+            if not topic:
+                continue
+
+            blocks.append(
+                {
+                    "block_type": 6,
+                    "heading4": {
+                        "elements": [
+                            {
+                                "text_run": {
+                                    "content": f"{branch_prefix}{topic}",
+                                    "text_element_style": {},
+                                }
+                            }
+                        ]
+                    },
+                }
+            )
+            for sub_child in sub_children:
+                if isinstance(sub_child, str):
+                    text = sub_child
+                elif isinstance(sub_child, dict):
+                    subtopic = sub_child.get("subtopic", "")
+                    details = sub_child.get("details", [])
+                    text = f"{leaf_prefix}{subtopic}"
+                    if details:
+                        text += f" ({', '.join(str(d) for d in details[:3])})"
                 else:
-                    logger.info("Whiteboard creation failed, using fallback document structure blocks")
-            except Exception as e:
-                logger.warning(f"Failed to create mindmap in whiteboard: {e}, using fallback document structure blocks")
+                    continue
+                if text:
+                    blocks.append(
+                        {
+                            "block_type": 12,
+                            "bullet": {
+                                "elements": [
+                                    {"text_run": {"content": text, "text_element_style": {}}}
+                                ],
+                                "style": {},
+                            },
+                        }
+                    )
+        return blocks
 
-        # Step 3: Process images at correct positions
-        # Insert images after their preceding text block
-        # Track cumulative offset as each image adds a new block
-        offset = 0
-        for preceding_idx, image_path in image_info:
+    # ── Image insertion (per-image try/except, parallel upload) ─────────
+
+    def _insert_images_safe(
+        self,
+        token: str,
+        document_id: str,
+        images: list[ImageData],
+        offset_state: dict[str, int],
+    ) -> None:
+        if not images:
+            return
+
+        # Phase 1: create empty image blocks sequentially to preserve order.
+        placeholders: list[tuple[ImageData, str]] = []
+        for image in images:
             try:
-                # Calculate insertion index: preceding_idx + 1 (after the block) + offset (from previous images)
-                # preceding_idx is -1 for images at the very beginning (should go at index 0)
-                if preceding_idx < 0:
-                    insert_index = 0
-                else:
-                    insert_index = preceding_idx + 1 + offset
-
-                logger.debug(f"Inserting image at index {insert_index} (preceding_idx={preceding_idx}, offset={offset})")
-
-                image_block_id = doc_client.create_image_block(token, document_id, index=insert_index)
+                insert_index = self._anchor_to_insert_index(
+                    image.anchor_text_block_index, offset_state["value"]
+                )
+                image_block_id = self.doc_client.create_image_block(
+                    token, document_id, index=insert_index
+                )
                 if not image_block_id:
-                    logger.warning(f"Failed to create image block for {image_path}")
+                    logger.warning(f"Failed to create image block for {image.image_path}")
                     continue
-                file_token = doc_client.upload_image(token, image_path, image_block_id)
-                if not file_token:
-                    logger.warning(f"Failed to upload image {image_path}")
-                    continue
-                doc_client.bind_image_to_block(token, document_id, image_block_id, file_token)
-                logger.info(f"Image uploaded at position {insert_index}: {image_path}")
-                offset += 1  # Each image adds one block
-            except Exception as e:
-                logger.error(f"Failed to process image {image_path}: {e}")
+                placeholders.append((image, image_block_id))
+                offset_state["value"] += 1
+            except Exception as exc:
+                logger.error(f"Skipping image block creation for {image.image_path}: {exc}")
 
-        # Step 3.5: Process tables at correct positions
-        # Create real table blocks using Feishu table API
-        for preceding_idx, table_block in table_info:
+        if not placeholders:
+            return
+
+        # Phase 2: upload + bind in parallel.
+        workers = max(1, min(self.config.upload_concurrency, len(placeholders)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(
+                    self._upload_and_bind_image, token, document_id, image, block_id
+                ): (image, block_id)
+                for image, block_id in placeholders
+            }
+            for future in as_completed(futures):
+                image, block_id = futures[future]
+                try:
+                    success = future.result()
+                except Exception as exc:
+                    logger.error(f"Image task crashed for {image.image_path}: {exc}")
+                    success = False
+                if not success:
+                    self._cleanup_orphan_block(token, document_id, block_id)
+
+    def _upload_and_bind_image(
+        self,
+        token: str,
+        document_id: str,
+        image: ImageData,
+        block_id: str,
+    ) -> bool:
+        try:
+            file_token = self.doc_client.upload_image(token, image.image_path, block_id)
+            if not file_token:
+                logger.warning(f"Failed to upload image {image.image_path}")
+                return False
+            self.doc_client.bind_image_to_block(
+                token, document_id, block_id, file_token
+            )
+            logger.info(f"Image inserted: {image.image_path}")
+            return True
+        except Exception as exc:
+            logger.error(f"Skipping image {image.image_path}: {exc}")
+            return False
+
+    def _cleanup_orphan_block(
+        self,
+        token: str,
+        document_id: str,
+        block_id: str,
+    ) -> None:
+        try:
+            self.doc_client.delete_block(token, document_id, block_id)
+            logger.debug(f"Cleaned up orphan image block {block_id}")
+        except Exception as exc:
+            logger.warning(f"Failed to clean up orphan block {block_id}: {exc}")
+
+    # ── Table insertion (per-table try/except, batch cell update) ───────
+
+    def _insert_tables_safe(
+        self,
+        token: str,
+        document_id: str,
+        tables: list[TableData],
+        offset_state: dict[str, int],
+    ) -> None:
+        for table in tables:
             try:
-                table_data = table_block.get("_table_data", {})
-                headers = table_data.get("headers", [])
-                rows = table_data.get("rows", [])
-
-                if not rows and not headers:
+                if table.row_size == 0 or table.column_size == 0:
                     continue
 
-                # Calculate dimensions
-                all_rows = ([headers] if headers else []) + rows
-                row_size = len(all_rows)
-                column_size = max(len(row) for row in all_rows) if all_rows else 0
-
-                if row_size == 0 or column_size == 0:
-                    continue
-
-                # Calculate insertion index
-                if preceding_idx < 0:
-                    insert_index = offset
-                else:
-                    insert_index = preceding_idx + 1 + offset
-
-                logger.debug(f"Creating table at index {insert_index}: rows={row_size}, cols={column_size}")
-
-                # Create table block
-                table_block_id, cell_ids = doc_client.create_table_block(
+                insert_index = self._anchor_to_insert_index(
+                    table.anchor_text_block_index, offset_state["value"]
+                )
+                table_block_id, cell_ids = self.doc_client.create_table_block(
                     token=token,
                     document_id=document_id,
-                    row_size=row_size,
-                    column_size=column_size,
+                    row_size=table.row_size,
+                    column_size=table.column_size,
                     index=insert_index,
                 )
-
                 if not table_block_id or not cell_ids:
-                    logger.warning("Failed to create table block, falling back to bullet list")
-                    # Fallback to bullet list format
-                    if headers:
-                        header_text = "| " + " | ".join(headers) + " |"
-                        doc_client.append_blocks(
-                            token=token,
-                            document_id=document_id,
-                            blocks=[{
-                                "block_type": 12,
-                                "bullet": {"elements": [{"text_run": {"content": header_text, "text_element_style": {}}}], "style": {}},
-                            }],
-                        )
-                    for row in rows:
-                        row_text = "| " + " | ".join(row) + " |"
-                        doc_client.append_blocks(
-                            token=token,
-                            document_id=document_id,
-                            blocks=[{
-                                "block_type": 12,
-                                "bullet": {"elements": [{"text_run": {"content": row_text, "text_element_style": {}}}], "style": {}},
-                            }],
-                        )
+                    logger.warning("Table block creation failed; falling back to bullets")
+                    self._table_fallback_bullets(token, document_id, table)
                     continue
 
-                # Fill table cells with content
-                # cell_ids is ordered by row: first row cells, then second row cells, etc.
+                all_rows = ([table.headers] if table.headers else []) + table.rows
+                updates: list[tuple[str, str]] = []
                 cell_idx = 0
-                for row_data in all_rows:
-                    for col_idx, cell_text in enumerate(row_data):
-                        if cell_idx < len(cell_ids):
-                            cell_id = cell_ids[cell_idx]
-                            doc_client.update_table_cell(
-                                token=token,
-                                document_id=document_id,
-                                cell_block_id=cell_id,
-                                text=cell_text,
-                            )
-                            cell_idx += 1
-                    # Fill remaining cells in this row with empty string
-                    for _ in range(column_size - len(row_data)):
-                        if cell_idx < len(cell_ids):
-                            doc_client.update_table_cell(
-                                token=token,
-                                document_id=document_id,
-                                cell_block_id=cell_ids[cell_idx],
-                                text="",
-                            )
-                            cell_idx += 1
+                for row in all_rows:
+                    for col_idx in range(table.column_size):
+                        if cell_idx >= len(cell_ids):
+                            break
+                        text = row[col_idx] if col_idx < len(row) else ""
+                        updates.append((cell_ids[cell_idx], text))
+                        cell_idx += 1
 
-                logger.info(f"Table created with {row_size} rows, {column_size} columns, {len(cell_ids)} cells filled")
-                offset += 1  # Table block adds one block
-            except Exception as e:
-                logger.error(f"Failed to process table: {e}")
+                self._update_cells_safe(token, document_id, updates)
+                offset_state["value"] += 1
+            except Exception as exc:
+                logger.error(f"Skipping table: {exc}")
 
-        # Step 4: Move to wiki space
+    def _update_cells_safe(
+        self,
+        token: str,
+        document_id: str,
+        updates: list[tuple[str, str]],
+    ) -> None:
+        if not updates:
+            return
+        try:
+            self.doc_client.batch_update_table_cells(token, document_id, updates)
+            return
+        except Exception as exc:
+            logger.warning(f"Batch cell update failed ({exc}), retrying one by one")
+
+        for cell_id, text in updates:
+            try:
+                self.doc_client.update_table_cell(token, document_id, cell_id, text)
+            except Exception as exc:
+                logger.warning(f"Cell {cell_id} update failed: {exc}")
+
+    def _table_fallback_bullets(
+        self,
+        token: str,
+        document_id: str,
+        table: TableData,
+    ) -> None:
+        lines: list[str] = []
+        if table.headers:
+            lines.append("| " + " | ".join(table.headers) + " |")
+        for row in table.rows:
+            lines.append("| " + " | ".join(row) + " |")
+
+        bullet_blocks = [
+            {
+                "block_type": 12,
+                "bullet": {
+                    "elements": [{"text_run": {"content": line, "text_element_style": {}}}],
+                    "style": {},
+                },
+            }
+            for line in lines
+        ]
+        self.doc_client.append_blocks(token=token, document_id=document_id, blocks=bullet_blocks)
+
+    @staticmethod
+    def _anchor_to_insert_index(anchor: int, offset: int) -> int:
+        if anchor < 0:
+            return offset
+        return anchor + 1 + offset
+
+    # ── Wiki move + polling ─────────────────────────────────────────────
+
+    def _finalize_wiki_move(self, token: str, document_id: str) -> FeishuPublishResult:
         move_response = self._move_doc_to_wiki(token, document_id)
         data = move_response.get("data", {})
         wiki_token = data.get("wiki_token")
         task_id = data.get("task_id")
-        logger.debug(f"Move to wiki response: data={data}, wiki_token={wiki_token}, task_id={task_id}")
+        trimmed = trim_raw_response(move_response)
 
-        # Build result
         if wiki_token:
-            url = self._build_url(wiki_token)
             return FeishuPublishResult(
                 success=True,
                 message="Published to Feishu knowledge base",
                 node_token=wiki_token,
                 document_id=document_id,
-                url=url,
-                raw_response=move_response,
+                url=self._build_url(wiki_token),
+                raw_response=trimmed,
             )
 
         if task_id:
-            node_token = self._poll_for_node_token(token, document_id, max_wait=60)
+            node_token = self._poll_for_node_token(token, document_id)
             if node_token:
-                url = self._build_url(node_token)
                 return FeishuPublishResult(
                     success=True,
                     message="Published to Feishu knowledge base",
                     node_token=node_token,
                     document_id=document_id,
-                    url=url,
-                    raw_response=move_response,
+                    url=self._build_url(node_token),
+                    raw_response=trimmed,
                 )
-            fallback_url = self._build_docx_url(document_id)
-            logger.info(f"Poll did not find node_token, returning docx fallback URL: {fallback_url}")
             return FeishuPublishResult(
                 success=True,
-                message="Published to Feishu knowledge base (docx URL)",
+                message="Published to Feishu knowledge base (docx URL fallback)",
                 node_token=task_id,
                 document_id=document_id,
-                url=fallback_url,
-                raw_response=move_response,
+                url=self._build_docx_url(document_id),
+                raw_response=trimmed,
             )
 
         return FeishuPublishResult(
             success=False,
             message="Unexpected response from Feishu move API",
             document_id=document_id,
-            raw_response=move_response,
+            raw_response=trimmed,
         )
-
-    def _create_and_link_mindmap(
-        self,
-        token: str,
-        payload: PublishPayload,
-    ) -> str | None:
-        """Create mindmap from structure and return URL."""
-        from learning_assistant.adapters.feishu.mindmap_client import FeishuMindmapClient
-
-        mindmap_client = FeishuMindmapClient(self.config)
-        mindmap_title = f"{payload.title} - 思维导图"
-
-        mindmap_token, mindmap_url = mindmap_client.build_mindmap_from_structure(
-            token=token,
-            title=mindmap_title,
-            structure=payload.mindmap_structure,
-        )
-
-        if mindmap_token:
-            # Move mindmap to wiki as well
-            try:
-                mindmap_client.move_to_wiki(token, mindmap_token)
-                logger.info(f"Mindmap moved to wiki: {mindmap_token}")
-            except Exception as e:
-                logger.warning(f"Failed to move mindmap to wiki: {e}")
-
-        return mindmap_url
-
-    def _add_mindmap_as_blocks(
-        self,
-        structure: dict[str, Any],
-        blocks: list[dict[str, Any]],
-    ) -> None:
-        """Add mindmap structure as heading/bullet blocks in document."""
-        root = structure.get("root", "")
-        children = structure.get("children", [])
-
-        # Add mindmap heading
-        blocks.append({
-            "block_type": 4,  # heading 2
-            "heading2": {"elements": [{"text_run": {"content": "🧠 思维导图", "text_element_style": {}}}]},
-        })
-
-        # Add root topic
-        blocks.append({
-            "block_type": 5,  # heading 3
-            "heading3": {"elements": [{"text_run": {"content": f"📌 {root}", "text_element_style": {}}}]},
-        })
-
-        # Add children as bullet lists
-        for child in children:
-            # Handle both dict and string children
-            if isinstance(child, str):
-                topic = child
-                sub_children = []
-            elif isinstance(child, dict):
-                topic = child.get("topic", "")
-                sub_children = child.get("children", [])
-            else:
-                continue
-
-            if not topic:
-                continue
-
-            # Level 1: topic as heading 4
-            blocks.append({
-                "block_type": 6,  # heading 4
-                "heading4": {"elements": [{"text_run": {"content": f"├─ {topic}", "text_element_style": {}}}]},
-            })
-
-            # Level 2: subtopics as bullets
-            subtopic_texts = []
-            for sub_child in sub_children:
-                # Handle both dict and string sub_children
-                if isinstance(sub_child, str):
-                    subtopic = sub_child
-                    details = []
-                elif isinstance(sub_child, dict):
-                    subtopic = sub_child.get("subtopic", "")
-                    details = sub_child.get("details", [])
-                else:
-                    continue
-
-                if subtopic:
-                    text = f"• {subtopic}"
-                    if details:
-                        text += f" ({', '.join(details[:3])})"
-                    subtopic_texts.append(text)
-
-            if subtopic_texts:
-                for text in subtopic_texts:
-                    blocks.append({
-                        "block_type": 12,  # bullet
-                        "bullet": {"elements": [{"text_run": {"content": text, "text_element_style": {}}}], "style": {}},
-                    })
-
-    def verify_configuration(self) -> dict[str, Any]:
-        """Verify token exchange and basic wiki accessibility."""
-        token = self._get_tenant_access_token()
-        nodes_response = self._list_nodes(token)
-        verification: dict[str, Any] = {
-            "token_verified": True,
-            "space_accessible": True,
-            "root_node_accessible": False,
-            "space_response": nodes_response,
-        }
-        if self.config.root_node_token:
-            node_response = self._get_node(token, self.config.root_node_token)
-            verification["root_node_accessible"] = True
-            verification["root_node_response"] = node_response
-        return verification
-
-    def _get_tenant_access_token(self) -> str:
-        """Get tenant access token from Feishu API."""
-        app_id = self.config.app_id or os.environ.get(self.config.app_id_env)
-        app_secret = self.config.app_secret or os.environ.get(self.config.app_secret_env)
-        if not app_id or not app_secret:
-            raise RuntimeError(
-                "Missing Feishu credentials. "
-                f"Set app_id/app_secret in config or set {self.config.app_id_env}/{self.config.app_secret_env} env vars."
-            )
-
-        response = requests.post(
-            f"{self.base_url}/auth/v3/tenant_access_token/internal",
-            json={"app_id": app_id, "app_secret": app_secret},
-            timeout=20,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        self._raise_for_business_error(payload)
-        token = payload.get("tenant_access_token")
-        if not token:
-            raise RuntimeError(f"Failed to obtain Feishu tenant access token: {payload}")
-        return token
 
     def _move_doc_to_wiki(self, token: str, document_id: str) -> dict[str, Any]:
-        """Move docx document to wiki space."""
-        response = requests.post(
-            f"{self.base_url}/wiki/v2/spaces/{self.config.space_id}/nodes/move_docs_to_wiki",
-            headers={"Authorization": f"Bearer {token}"},
+        space_id = self.config.resolve_space_id()
+        root_node_token = self.config.resolve_root_node_token()
+        response = self.session.post(
+            f"{self.base_url}/wiki/v2/spaces/{space_id}/nodes/move_docs_to_wiki",
+            headers=self._auth_headers(token),
             json={
-                "parent_wiki_token": self.config.root_node_token,
+                "parent_wiki_token": root_node_token,
                 "obj_type": "docx",
                 "obj_token": document_id,
             },
@@ -423,60 +447,72 @@ class FeishuWikiClient:
         self._raise_for_business_error(payload)
         return payload
 
-    def _poll_for_node_token(self, token: str, document_id: str, max_wait: int = 60) -> str | None:
-        """Poll wiki nodes to find the actual node_token for document.
+    def _poll_for_node_token(self, token: str, document_id: str) -> str | None:
+        """Poll wiki nodes with exponential backoff up to poll_max_wait_seconds."""
+        space_id = self.config.resolve_space_id()
+        root_node_token = self.config.resolve_root_node_token()
+        deadline = time.time() + self.config.poll_max_wait_seconds
+        backoff = self.config.poll_initial_backoff
+        attempt = 0
 
-        Args:
-            token: tenant_access_token
-            document_id: Document ID to find
-            max_wait: Maximum wait time in seconds (default 60)
+        while time.time() < deadline:
+            attempt += 1
+            time.sleep(backoff)
+            backoff = min(backoff * 2, self.config.poll_max_backoff)
 
-        Returns:
-            node_token if found, None otherwise
-        """
-        for attempt in range(max_wait):
-            time.sleep(1)
-            response = requests.get(
-                f"{self.base_url}/wiki/v2/spaces/{self.config.space_id}/nodes",
-                headers={"Authorization": f"Bearer {token}"},
-                params={"parent_node_token": self.config.root_node_token, "page_size": 50},
+            response = self.session.get(
+                f"{self.base_url}/wiki/v2/spaces/{space_id}/nodes",
+                headers=self._auth_headers(token),
+                params={"parent_node_token": root_node_token, "page_size": 50},
                 timeout=30,
             )
             response.raise_for_status()
-            data = response.json().get("data", {})
-            items = data.get("items", [])
-            logger.debug(f"Poll attempt {attempt+1}/{max_wait}: found {len(items)} nodes, looking for document_id={document_id}")
+            items = response.json().get("data", {}).get("items", [])
             for node in items:
                 if node.get("obj_token") == document_id:
                     node_token = node.get("node_token")
-                    logger.info(f"Found matching node: obj_token={document_id}, node_token={node_token}")
+                    logger.info(
+                        f"Found wiki node for doc {document_id} on attempt {attempt}: {node_token}"
+                    )
                     return node_token
-        logger.warning(f"Poll completed after {max_wait}s, document_id={document_id} not found in wiki nodes")
+
+        logger.warning(f"Polling timed out for document_id={document_id}")
         return None
+
+    # ── URL builders ────────────────────────────────────────────────────
 
     def _build_url(self, node_token: str) -> str | None:
-        """Build Feishu wiki URL from node_token."""
         if self.config.space_domain:
             return f"https://{self.config.space_domain}.feishu.cn/wiki/{node_token}"
-        return None
+        return f"https://feishu.cn/wiki/{node_token}"
 
     def _build_docx_url(self, document_id: str) -> str | None:
-        """Build Feishu docx URL from document_id (fallback when wiki node not ready)."""
         if self.config.space_domain:
             return f"https://{self.config.space_domain}.feishu.cn/docx/{document_id}"
-        return None
+        return f"https://feishu.cn/docx/{document_id}"
 
-    def _build_whiteboard_url(self, whiteboard_id: str) -> str | None:
-        """Build Feishu whiteboard URL from whiteboard_id."""
-        if self.config.space_domain:
-            return f"https://{self.config.space_domain}.feishu.cn/board/{whiteboard_id}"
-        return None
+    # ── Verification ────────────────────────────────────────────────────
+
+    def verify_configuration(self) -> dict[str, Any]:
+        token = self._get_tenant_access_token()
+        nodes_response = self._list_nodes(token)
+        verification: dict[str, Any] = {
+            "token_verified": True,
+            "space_accessible": True,
+            "root_node_accessible": False,
+            "space_response": nodes_response,
+        }
+        root_node_token = self.config.resolve_root_node_token()
+        if root_node_token:
+            verification["root_node_response"] = self._get_node(token, root_node_token)
+            verification["root_node_accessible"] = True
+        return verification
 
     def _list_nodes(self, token: str) -> dict[str, Any]:
-        """List nodes in wiki space."""
-        response = requests.get(
-            f"{self.base_url}/wiki/v2/spaces/{self.config.space_id}/nodes",
-            headers={"Authorization": f"Bearer {token}"},
+        space_id = self.config.resolve_space_id()
+        response = self.session.get(
+            f"{self.base_url}/wiki/v2/spaces/{space_id}/nodes",
+            headers=self._auth_headers(token),
             params={"page_size": 1},
             timeout=20,
         )
@@ -486,10 +522,9 @@ class FeishuWikiClient:
         return payload
 
     def _get_node(self, token: str, node_token: str) -> dict[str, Any]:
-        """Get specific node info."""
-        response = requests.get(
+        response = self.session.get(
             f"{self.base_url}/wiki/v2/spaces/get_node",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=self._auth_headers(token),
             params={"token": node_token},
             timeout=20,
         )
@@ -497,10 +532,3 @@ class FeishuWikiClient:
         payload = response.json()
         self._raise_for_business_error(payload)
         return payload
-
-    def _raise_for_business_error(self, payload: dict[str, Any]) -> None:
-        """Raise error if Feishu API returns business error."""
-        if payload.get("code") not in (None, 0):
-            raise RuntimeError(
-                f"Feishu API error {payload.get('code')}: {payload.get('msg', 'unknown error')}"
-            )
