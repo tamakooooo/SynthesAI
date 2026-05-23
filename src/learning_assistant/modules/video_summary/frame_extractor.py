@@ -57,6 +57,10 @@ class FrameExtractor:
         output_dir: Path | None = None,
         output_format: str = "jpg",
         quality: int = 95,  # Higher quality for better screenshots
+        chapter_position: float = 0.35,
+        first_chapter_position: float = 0.1,
+        min_offset_seconds: float = 1.0,
+        end_padding_seconds: float = 1.0,
     ) -> None:
         """
         Initialize FrameExtractor.
@@ -65,6 +69,10 @@ class FrameExtractor:
             output_dir: Output directory for extracted frames (default: data/frames)
             output_format: Image format (jpg or png)
             quality: Image quality for JPEG (1-100, higher = better quality)
+            chapter_position: Default relative position inside each chapter (0-1)
+            first_chapter_position: Relative position for the first chapter (0-1)
+            min_offset_seconds: Minimum offset from chapter start when possible
+            end_padding_seconds: Keep this distance from chapter end when possible
 
         Raises:
             RuntimeError: If FFmpeg is not available
@@ -72,6 +80,10 @@ class FrameExtractor:
         self.output_dir = output_dir or Path("data/frames")
         self.output_format = output_format
         self.quality = quality
+        self.chapter_position = max(0.0, min(chapter_position, 1.0))
+        self.first_chapter_position = max(0.0, min(first_chapter_position, 1.0))
+        self.min_offset_seconds = max(0.0, min_offset_seconds)
+        self.end_padding_seconds = max(0.0, end_padding_seconds)
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -242,16 +254,20 @@ class FrameExtractor:
         video_path: Path,
         chapters: list[dict[str, Any]],
         video_title: str,
+        video_duration: float | None = None,
     ) -> list[dict[str, Any]]:
         """
-        Extract frames for all chapters at their start_time.
+        Extract frames for all chapters using adaptive timestamps.
 
         Creates video-specific subdirectory and extracts one frame per chapter.
+        Each timestamp is chosen inside the chapter range rather than always
+        using the chapter start.
 
         Args:
             video_path: Video file path
             chapters: List of chapter dictionaries (must have start_time field)
             video_title: Video title (for organizing frames)
+            video_duration: Full video duration in seconds if known
 
         Returns:
             Updated chapters with screenshot_path field added
@@ -291,17 +307,12 @@ class FrameExtractor:
         successful_count = 0
 
         for i, chapter in enumerate(chapters):
-            # Convert timestamp to seconds
-            timestamp_str = chapter.get("start_time", "00:00")
-            timestamp_sec = self.timestamp_to_seconds(timestamp_str)
-
-            # Generate frame filename
+            timestamp_sec = self._resolve_chapter_timestamp(
+                chapters=chapters,
+                chapter_index=i,
+                video_duration=video_duration,
+            )
             frame_filename = f"chapter_{i + 1:02d}"
-
-            # Special handling for first chapter: use timestamp 0 (cover-like frame)
-            if i == 0:
-                logger.info("First chapter: using frame at 00:00 as cover image")
-                timestamp_sec = 0.0
 
             # Temporarily set output_dir to video-specific directory
             original_output_dir = self.output_dir
@@ -319,6 +330,7 @@ class FrameExtractor:
 
             # Update chapter with screenshot path (relative)
             updated_chapter = chapter.copy()
+            updated_chapter["screenshot_timestamp"] = timestamp_sec
             if extracted_path:
                 # Calculate relative path from output directory
                 relative_path = self._calculate_relative_path(
@@ -340,6 +352,48 @@ class FrameExtractor:
             f"Frame extraction complete: {successful_count}/{len(chapters)} successful"
         )
         return updated_chapters
+
+    def _resolve_chapter_timestamp(
+        self,
+        chapters: list[dict[str, Any]],
+        chapter_index: int,
+        video_duration: float | None = None,
+    ) -> float:
+        """Choose a timestamp inside a chapter window."""
+        start_time = self.timestamp_to_seconds(
+            chapters[chapter_index].get("start_time", "00:00")
+        )
+        next_start: float | None = None
+
+        for next_index in range(chapter_index + 1, len(chapters)):
+            candidate = self.timestamp_to_seconds(
+                chapters[next_index].get("start_time", "00:00")
+            )
+            if candidate > start_time:
+                next_start = candidate
+                break
+
+        chapter_end = next_start if next_start is not None else video_duration
+        position = (
+            self.first_chapter_position
+            if chapter_index == 0
+            else self.chapter_position
+        )
+
+        if chapter_end is None or chapter_end <= start_time:
+            return start_time
+
+        usable_end = max(start_time, chapter_end - self.end_padding_seconds)
+        if usable_end <= start_time:
+            return start_time
+
+        chapter_length = usable_end - start_time
+        target = start_time + chapter_length * position
+
+        if chapter_length > self.min_offset_seconds:
+            target = max(target, start_time + self.min_offset_seconds)
+
+        return min(target, usable_end)
 
     def _sanitize_title(self, title: str) -> str:
         """

@@ -191,6 +191,49 @@ class TestFrameExtraction:
 class TestChapterFrameExtraction:
     """Test extract_frames_for_chapters method."""
 
+    def test_resolve_chapter_timestamp_uses_chapter_range(self) -> None:
+        """Test timestamp selection uses the chapter window, not only start_time."""
+        with patch.object(FrameExtractor, '_check_ffmpeg', return_value=True):
+            extractor = FrameExtractor(
+                chapter_position=0.5,
+                first_chapter_position=0.2,
+                min_offset_seconds=1.0,
+                end_padding_seconds=2.0,
+            )
+
+            chapters = [
+                {"title": "Introduction", "start_time": "00:00"},
+                {"title": "Main Content", "start_time": "05:00"},
+                {"title": "Conclusion", "start_time": "09:00"},
+            ]
+
+            assert extractor._resolve_chapter_timestamp(chapters, 0) == 59.6
+            assert extractor._resolve_chapter_timestamp(chapters, 1) == 419.0
+
+            shutil.rmtree(extractor.output_dir)
+
+    def test_resolve_chapter_timestamp_uses_video_duration_for_last_chapter(self) -> None:
+        """Test last chapter can use full video duration as end bound."""
+        with patch.object(FrameExtractor, '_check_ffmpeg', return_value=True):
+            extractor = FrameExtractor(
+                chapter_position=0.5,
+                min_offset_seconds=1.0,
+                end_padding_seconds=2.0,
+            )
+
+            chapters = [
+                {"title": "Introduction", "start_time": "00:00"},
+                {"title": "Wrap-up", "start_time": "09:00"},
+            ]
+
+            assert extractor._resolve_chapter_timestamp(
+                chapters,
+                1,
+                video_duration=720.0,
+            ) == 629.0
+
+            shutil.rmtree(extractor.output_dir)
+
     @patch.object(FrameExtractor, 'extract_frame')
     def test_extract_frames_for_all_chapters(self, mock_extract: Mock) -> None:
         """Test extracting frames for multiple chapters."""
@@ -228,19 +271,21 @@ class TestChapterFrameExtraction:
                 video_path=video_path,
                 chapters=chapters,
                 video_title="Test Video",
+                video_duration=900.0,
             )
 
             # Verify extract_frame called for each chapter
             assert mock_extract.call_count == 3
 
-            # Verify first chapter uses timestamp 0.0 (cover-like frame)
+            # Verify first chapter no longer hard-locks to 00:00
             first_call_args = mock_extract.call_args_list[0]
-            assert first_call_args[1]["timestamp"] == 0.0
+            assert first_call_args[1]["timestamp"] > 0.0
 
             # Verify screenshot_path added to chapters
             assert len(updated) == 3
             for chapter in updated:
                 assert "screenshot_path" in chapter
+                assert "screenshot_timestamp" in chapter
 
             # Cleanup
             video_path.unlink()

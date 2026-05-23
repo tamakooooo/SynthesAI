@@ -200,6 +200,16 @@ class VideoSummaryModule(BaseModule):
                 ),
                 output_format=frame_extraction_config.get("format", "jpg"),
                 quality=frame_extraction_config.get("quality", 95),  # Higher default quality
+                chapter_position=frame_extraction_config.get("chapter_position", 0.35),
+                first_chapter_position=frame_extraction_config.get(
+                    "first_chapter_position", 0.1
+                ),
+                min_offset_seconds=frame_extraction_config.get(
+                    "min_offset_seconds", 1.0
+                ),
+                end_padding_seconds=frame_extraction_config.get(
+                    "end_padding_seconds", 1.0
+                ),
             )
             logger.debug("Frame extractor initialized")
         else:
@@ -314,6 +324,7 @@ class VideoSummaryModule(BaseModule):
                                 video_path=video_path,
                                 chapters=summary_data["chapters"],
                                 video_title=video_info["title"],
+                                video_duration=video_info.get("duration"),
                             )
                         )
                     else:

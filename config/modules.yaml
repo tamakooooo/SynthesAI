@@ -99,6 +99,14 @@ modules:
         format: "jpg"
         # JPEG quality (1-100, higher = better quality)
         quality: 85
+        # Relative position inside each chapter for screenshots (0=start, 1=end)
+        chapter_position: 0.35
+        # Relative position for the first chapter
+        first_chapter_position: 0.1
+        # Minimum offset from chapter start when chapter is long enough
+        min_offset_seconds: 1.0
+        # Avoid selecting frames too close to chapter end
+        end_padding_seconds: 1.0
 
     # CLI command configuration
     cli:
