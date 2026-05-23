@@ -573,6 +573,27 @@ class VideoSummaryModule(BaseModule):
                 },
             )
         )
+        self._attach_feishu_publish_url(video_url, result)
+
+    def _attach_feishu_publish_url(
+        self,
+        video_url: str,
+        result: dict[str, Any],
+    ) -> None:
+        """Backfill Feishu URL from synchronous publish events."""
+        if not self.event_bus:
+            return
+
+        for event in reversed(self.event_bus.get_event_history(EventType.FEISHU_PUBLISHED)):
+            if event.data.get("module") != self.name:
+                continue
+            if event.data.get("source_url") != video_url:
+                continue
+
+            url = event.data.get("url")
+            if url:
+                result["feishu_url"] = url
+            return
 
     def _build_publish_payload(
         self,

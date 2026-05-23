@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from learning_assistant.core.event_bus import EventBus
+from learning_assistant.core.event_bus import Event, EventBus, EventType
 from learning_assistant.core.llm.service import LLMService
 from learning_assistant.modules.video_summary import VideoSummaryModule
 from learning_assistant.modules.video_summary.downloader import VideoInfo
@@ -235,6 +235,37 @@ class TestVideoSummaryModuleExecute:
 
 class TestVideoSummaryModulePrivateMethods:
     """Test VideoSummaryModule private methods."""
+
+    def test_publish_completion_event_backfills_feishu_url(self) -> None:
+        """Test publish event attaches Feishu URL to the module result."""
+        module = VideoSummaryModule()
+        event_bus = EventBus()
+        module.initialize({}, event_bus)
+
+        def publish_feishu_result(event: Event) -> None:
+            event_bus.publish(
+                Event(
+                    event_type=EventType.FEISHU_PUBLISHED,
+                    source="feishu",
+                    data={
+                        "module": "video_summary",
+                        "source_url": event.data["source_url"],
+                        "url": "https://acme.feishu.cn/wiki/wiki_token_123",
+                    },
+                )
+            )
+
+        event_bus.subscribe(EventType.VIDEO_SUMMARIZED, publish_feishu_result)
+
+        result = {
+            "status": "success",
+            "video_info": {"title": "Test Video"},
+            "summary": {"summary": "Test summary"},
+        }
+
+        module._publish_completion_event("https://example.com/video", result)
+
+        assert result["feishu_url"] == "https://acme.feishu.cn/wiki/wiki_token_123"
 
     def test_download_video_success(self, tmp_path: Path) -> None:
         """Test _download_video method."""
