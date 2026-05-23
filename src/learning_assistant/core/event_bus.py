@@ -34,6 +34,7 @@ class EventType(Enum):
     # Adapter events
     CONTENT_PUSHED = "adapter.content_pushed"
     SYNC_COMPLETED = "adapter.sync_completed"
+    FEISHU_PUBLISHED = "adapter.feishu_published"
 
     # System events
     ERROR_OCCURRED = "system.error"

@@ -624,34 +624,29 @@ class VideoSummaryModule(BaseModule):
                 chapter_title = chapter.get("title", "")
                 chapter_summary = chapter.get("summary", "")
                 start_time = chapter.get("start_time", "")
+                absolute_path = chapter.get("absolute_screenshot_path")
                 screenshot_path = chapter.get("screenshot_path")
 
-                # Add screenshot image if available
-                if screenshot_path:
-                    # Convert relative path to absolute path using frame_extractor's output_dir
-                    # screenshot_path is like "../frames/VideoTitle/chapter_01.jpg"
-                    # We need to extract the actual filename and use frame_extractor.output_dir
-                    from pathlib import Path as PathLib
+                # Prefer the absolute path set by frame_extractor. Fall back to
+                # legacy "../frames/..." string for older payloads.
+                abs_path: Path | None = None
+                if absolute_path:
+                    abs_path = Path(absolute_path)
+                elif screenshot_path:
                     from learning_assistant.core.config_manager import ConfigManager
 
-                    # Get the frame output directory from config
-                    config_manager = ConfigManager()
-                    path_config = config_manager.get_path_config()
-                    frames_dir = PathLib(path_config.data_frames)
-
-                    # Extract the filename from relative path (e.g., "VideoTitle/chapter_01.jpg")
-                    # Remove "../frames/" prefix to get the relative path under frames_dir
+                    path_config = ConfigManager().get_path_config()
+                    frames_dir = Path(path_config.data_frames)
                     if screenshot_path.startswith("../frames/"):
-                        relative_under_frames = screenshot_path.replace("../frames/", "")
+                        relative_under_frames = screenshot_path[len("../frames/"):]
                     else:
-                        relative_under_frames = screenshot_path.replace("../", "")
-
+                        relative_under_frames = screenshot_path.lstrip("./")
                     abs_path = frames_dir / relative_under_frames
-                    logger.debug(f"Converting screenshot path: {screenshot_path} -> {abs_path}")
 
+                if abs_path is not None:
+                    logger.debug(f"Resolved screenshot path: {abs_path}")
                     if abs_path.exists():
                         blocks.append(PublishBlock(type="image", image_path=str(abs_path)))
-                        logger.debug(f"Added image block: {abs_path}")
                     else:
                         logger.warning(f"Screenshot file not found: {abs_path}")
 

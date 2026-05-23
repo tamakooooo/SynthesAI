@@ -326,10 +326,12 @@ class FrameExtractor:
                     output_dir=Path("data/outputs"),
                 )
                 updated_chapter["screenshot_path"] = relative_path
+                updated_chapter["absolute_screenshot_path"] = str(extracted_path)
                 successful_count += 1
                 logger.debug(f"Chapter {i + 1}: screenshot added at {relative_path}")
             else:
                 updated_chapter["screenshot_path"] = None
+                updated_chapter["absolute_screenshot_path"] = None
                 logger.warning(f"Chapter {i + 1}: failed to extract screenshot")
 
             updated_chapters.append(updated_chapter)
