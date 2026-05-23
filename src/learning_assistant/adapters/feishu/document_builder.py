@@ -1,65 +1,104 @@
-"""
-Convert normalized publish payloads to Feishu docx blocks.
-"""
+"""Convert normalized publish payloads to Feishu docx blocks."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from typing import Any
 
-from loguru import logger
-
 from learning_assistant.core.publishing.models import PublishBlock, PublishPayload
+
+
+@dataclass
+class TableData:
+    """Structured table data for deferred creation via table API."""
+
+    headers: list[str]
+    rows: list[list[str]]
+    anchor_text_block_index: int
+
+    @property
+    def row_size(self) -> int:
+        return len(self.rows) + (1 if self.headers else 0)
+
+    @property
+    def column_size(self) -> int:
+        widths = [len(self.headers)] if self.headers else []
+        widths.extend(len(r) for r in self.rows)
+        return max(widths) if widths else 0
+
+
+@dataclass
+class ImageData:
+    """Local image to upload after document creation."""
+
+    image_path: str
+    anchor_text_block_index: int
+
+
+@dataclass
+class BuildResult:
+    """Result of building Feishu blocks from a PublishPayload.
+
+    text_blocks: created in initial document creation call
+    images: uploaded and inserted after preceding text block
+    tables: created via dedicated table API after preceding text block
+    """
+
+    text_blocks: list[dict[str, Any]] = field(default_factory=list)
+    images: list[ImageData] = field(default_factory=list)
+    tables: list[TableData] = field(default_factory=list)
 
 
 class FeishuDocumentBuilder:
     """Build Feishu docx block payloads from PublishPayload."""
 
-    def build(self, payload: PublishPayload) -> list[dict[str, Any]]:
-        blocks: list[dict[str, Any]] = []
+    def build(self, payload: PublishPayload) -> BuildResult:
+        result = BuildResult()
 
         if payload.summary:
-            blocks.append(self._paragraph_block(payload.summary))
+            result.text_blocks.append(self._paragraph_block(payload.summary))
 
         for block in payload.blocks:
+            anchor = len(result.text_blocks) - 1
             if block.type == "heading":
-                blocks.append(self._heading_block(block))
+                result.text_blocks.append(self._heading_block(block))
             elif block.type == "bullet_list":
                 for item in block.items:
-                    blocks.append(self._bullet_block(item))
+                    result.text_blocks.append(self._bullet_block(item))
             elif block.type == "quote":
-                blocks.append(self._quote_block(block.text))
+                result.text_blocks.append(self._quote_block(block.text))
             elif block.type == "code":
-                blocks.append(self._code_block(block))
+                result.text_blocks.append(self._code_block(block))
             elif block.type == "image":
-                # Image blocks need special handling - return placeholder with path
-                blocks.append(self._image_placeholder(block))
+                if block.image_path:
+                    result.images.append(
+                        ImageData(image_path=block.image_path, anchor_text_block_index=anchor)
+                    )
             elif block.type == "table":
-                # Table blocks use Feishu block_type 31
-                blocks.extend(self._table_blocks(block))
+                if block.table_rows or block.table_headers:
+                    result.tables.append(
+                        TableData(
+                            headers=list(block.table_headers),
+                            rows=[list(r) for r in block.table_rows],
+                            anchor_text_block_index=anchor,
+                        )
+                    )
             else:
-                blocks.append(self._paragraph_block(block.text))
+                result.text_blocks.append(self._paragraph_block(block.text))
 
-        metadata_lines = []
+        metadata_lines: list[str] = []
         if payload.source_url:
             metadata_lines.append(f"Source: {payload.source_url}")
         for key, value in payload.metadata.items():
             metadata_lines.append(f"{key}: {value}")
         if metadata_lines:
-            blocks.append(self._heading_block(PublishBlock(type="heading", text="Metadata", level=2)))
+            result.text_blocks.append(
+                self._heading_block(PublishBlock(type="heading", text="Metadata", level=2))
+            )
             for line in metadata_lines:
-                blocks.append(self._paragraph_block(line))
+                result.text_blocks.append(self._paragraph_block(line))
 
-        return blocks
-
-    def _image_placeholder(self, block: PublishBlock) -> dict[str, Any]:
-        """Return a placeholder dict for image block (needs upload before inserting).
-
-        The actual image upload and block creation is handled by wiki_client.
-        This placeholder carries the image_path for later processing.
-        """
-        return {
-            "block_type": 27,
-            "image": {},
-            "_image_path": block.image_path,  # Internal field for wiki_client to process
-        }
+        return result
 
     def _heading_block(self, block: PublishBlock) -> dict[str, Any]:
         level = max(1, min(block.level, 9))
@@ -105,44 +144,6 @@ class FeishuDocumentBuilder:
                 "style": {"language": block.language or "PlainText"},
             },
         }
-
-    def _table_blocks(self, block: PublishBlock) -> list[dict[str, Any]]:
-        """Build Feishu table blocks (block_type 31 + cells).
-
-        Feishu table structure:
-        1. Table block (block_type 31) with property containing row_size, column_size
-        2. Table cell blocks (block_type 32) as children
-
-        Since we can't directly insert cell content in one API call,
-        we return a placeholder structure that wiki_client needs to process.
-        """
-        headers = block.table_headers or []
-        rows = block.table_rows or []
-
-        if not rows:
-            return []
-
-        # Calculate dimensions
-        column_size = max(len(headers), max(len(row) for row in rows) if rows else 0)
-        row_size = len(rows) + (1 if headers else 0)
-
-        # Build table block with property
-        table_block = {
-            "block_type": 31,  # Table Block
-            "table": {
-                "cells": [],  # Will be filled after cell blocks are created
-                "property": {
-                    "row_size": row_size,
-                    "column_size": column_size,
-                },
-            },
-            "_table_data": {  # Internal fields for wiki_client to process
-                "headers": headers,
-                "rows": rows,
-            },
-        }
-
-        return [table_block]
 
     def _text_element(self, text: str) -> dict[str, Any]:
         return {
