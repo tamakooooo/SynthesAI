@@ -298,6 +298,14 @@ class FrameExtractor:
         video_frame_dir = self.output_dir / safe_title
         video_frame_dir.mkdir(parents=True, exist_ok=True)
 
+        # Remove stale chapter screenshots from previous runs for this title
+        cleanup_patterns = {"chapter_*.jpg", "chapter_*.jpeg", "chapter_*.png"}
+        cleanup_patterns.add(f"chapter_*.{self.output_format.lstrip('.')}")
+        for pattern in cleanup_patterns:
+            for stale_file in video_frame_dir.glob(pattern):
+                if stale_file.is_file():
+                    stale_file.unlink()
+
         logger.info(
             f"Extracting frames for {len(chapters)} chapters " f"to {video_frame_dir}"
         )

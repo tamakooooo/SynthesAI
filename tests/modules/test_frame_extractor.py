@@ -292,6 +292,47 @@ class TestChapterFrameExtraction:
             if extractor.output_dir.exists():
                 shutil.rmtree(extractor.output_dir)
 
+    @patch.object(FrameExtractor, 'extract_frame')
+    def test_extract_frames_cleans_stale_chapter_files(self, mock_extract: Mock) -> None:
+        """Test stale chapter image files are removed before extraction."""
+        with patch.object(FrameExtractor, '_check_ffmpeg', return_value=True):
+            extractor = FrameExtractor(output_dir=Path("test_frames"))
+
+            video_dir = extractor.output_dir / extractor._sanitize_title("Test Video")
+            video_dir.mkdir(parents=True, exist_ok=True)
+            stale_jpg = video_dir / "chapter_01.jpg"
+            stale_png = video_dir / "chapter_02.png"
+            keep_cover = video_dir / "cover.jpg"
+            unrelated = video_dir / "notes.txt"
+            for file in (stale_jpg, stale_png, keep_cover, unrelated):
+                file.touch()
+
+            def create_new_frame(*args, **kwargs):
+                frame_path = video_dir / "chapter_01.jpg"
+                frame_path.write_text("new frame")
+                return frame_path
+
+            mock_extract.side_effect = create_new_frame
+
+            video_path = Path("test_video.mp4")
+            video_path.touch()
+
+            extractor.extract_frames_for_chapters(
+                video_path=video_path,
+                chapters=[{"title": "Intro", "start_time": "00:00"}],
+                video_title="Test Video",
+            )
+
+            assert stale_jpg.exists()
+            assert stale_jpg.read_text() == "new frame"
+            assert not stale_png.exists()
+            assert keep_cover.exists()
+            assert unrelated.exists()
+
+            video_path.unlink()
+            if extractor.output_dir.exists():
+                shutil.rmtree(extractor.output_dir)
+
     def test_extract_frames_video_not_found(self) -> None:
         """Test chapter frame extraction when video not found."""
         with patch.object(FrameExtractor, '_check_ffmpeg', return_value=True):

@@ -809,32 +809,51 @@ class VideoSummaryModule(BaseModule):
         import shutil
         from learning_assistant.core.config_manager import ConfigManager
 
+        frame_extractor = self.frame_extractor
+        if frame_extractor is None:
+            logger.warning("Frame extractor not initialized, skipping chapter cover copy")
+            return chapters
+
         # Create video-specific directory
-        safe_title = self.frame_extractor._sanitize_title(video_title)
-        video_frame_dir = self.frame_extractor.output_dir / safe_title
+        safe_title = frame_extractor._sanitize_title(video_title)
+        video_frame_dir = frame_extractor.output_dir / safe_title
         video_frame_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy cover image to frame directory
-        cover_dest = video_frame_dir / "cover.jpg"
-        shutil.copy(cover_path, cover_dest)
+        output_format = cover_path.suffix.lstrip(".") or getattr(
+            frame_extractor, "output_format", None
+        ) or "jpg"
+        output_format = output_format.lstrip(".")
 
-        logger.info(f"Copied cover image to {cover_dest}")
+        # Remove stale chapter screenshots from previous runs for this title.
+        for pattern in {"chapter_*.jpg", "chapter_*.jpeg", "chapter_*.png"}:
+            for stale_file in video_frame_dir.glob(pattern):
+                if stale_file.is_file():
+                    stale_file.unlink()
 
         # Get output path from config
         config_manager = ConfigManager()
         path_config = config_manager.get_path_config()
 
-        # Calculate relative path
-        relative_path = self.frame_extractor._calculate_relative_path(
-            frame_path=cover_dest,
-            output_dir=Path(path_config.data_outputs_video).parent,
-        )
-
-        # Add same cover path to all chapters
         updated_chapters = []
-        for chapter in chapters:
+        for index, chapter in enumerate(chapters, start=1):
+            chapter_dest = video_frame_dir / f"chapter_{index:02d}.{output_format}"
+            shutil.copy(cover_path, chapter_dest)
+
+            relative_path = frame_extractor._calculate_relative_path(
+                frame_path=chapter_dest,
+                output_dir=Path(path_config.data_outputs_video).parent,
+            )
+
             updated_chapter = chapter.copy()
             updated_chapter["screenshot_path"] = relative_path
+            updated_chapter["absolute_screenshot_path"] = str(chapter_dest)
+            if chapter.get("start_time"):
+                try:
+                    updated_chapter["screenshot_timestamp"] = (
+                        frame_extractor.timestamp_to_seconds(str(chapter["start_time"]))
+                    )
+                except Exception:
+                    pass
             updated_chapters.append(updated_chapter)
 
         logger.info(f"Applied cover image to {len(chapters)} chapters")

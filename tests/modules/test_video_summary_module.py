@@ -473,6 +473,50 @@ class TestVideoSummaryModulePrivateMethods:
             assert "markdown" in result
             assert "pdf" in result
 
+    def test_use_cover_for_chapters_creates_per_chapter_files(self, tmp_path: Path) -> None:
+        """Test cover reuse creates one file per chapter with paths populated."""
+        module = VideoSummaryModule()
+        module.frame_extractor = Mock()
+        module.frame_extractor.output_dir = tmp_path / "frames"
+        module.frame_extractor.output_format = "jpg"
+        module.frame_extractor._sanitize_title = Mock(return_value="Test Video")
+        module.frame_extractor.timestamp_to_seconds = Mock(return_value=12.5)
+
+        module.frame_extractor._calculate_relative_path = Mock(
+            side_effect=lambda frame_path, output_dir: f"../frames/Test Video/{frame_path.name}"
+        )
+
+        cover_path = tmp_path / "cover.png"
+        cover_path.write_bytes(b"cover")
+
+        frame_dir = tmp_path / "frames" / "Test Video"
+        frame_dir.mkdir(parents=True)
+        stale_extra = frame_dir / "chapter_03.png"
+        stale_extra.write_bytes(b"stale")
+
+        with patch("learning_assistant.core.config_manager.ConfigManager") as mock_cm:
+            mock_cm.return_value.get_path_config.return_value = Mock(
+                data_outputs_video=str(tmp_path / "outputs" / "video")
+            )
+
+            chapters = [
+                {"title": "Intro", "start_time": "00:00"},
+                {"title": "Main", "start_time": "00:30"},
+            ]
+            updated = module._use_cover_for_chapters(
+                chapters=chapters,
+                cover_path=cover_path,
+                video_title="Test Video",
+            )
+
+        assert (tmp_path / "frames" / "Test Video" / "chapter_01.png").exists()
+        assert (tmp_path / "frames" / "Test Video" / "chapter_02.png").exists()
+        assert not stale_extra.exists()
+        assert updated[0]["screenshot_path"].endswith("chapter_01.png")
+        assert updated[0]["absolute_screenshot_path"].endswith("chapter_01.png")
+        assert updated[0]["screenshot_timestamp"] == 12.5
+        assert updated[1]["screenshot_path"].endswith("chapter_02.png")
+
 
 class TestVideoSummaryModuleErrorHandling:
     """Test VideoSummaryModule error handling."""
