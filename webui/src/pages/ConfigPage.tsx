@@ -29,6 +29,7 @@ const ConfigPage: React.FC = () => {
     app_id_env: 'FEISHU_APP_ID',
     app_secret: null,
     app_secret_env: 'FEISHU_APP_SECRET',
+    space_domain: '',
     space_id: '',
     root_node_token: '',
     publish_modules: [],
@@ -594,6 +595,18 @@ const ConfigPage: React.FC = () => {
                   setFeishuConfig((current) => ({ ...current, app_secret: event.target.value || null }))
                 }
                 placeholder="仅保存在本地配置文件"
+              />
+            </div>
+
+            <div>
+              <label className="mb-xs block text-sm font-medium text-primary">Space Domain</label>
+              <input
+                className="input w-full"
+                value={feishuConfig.space_domain}
+                onChange={(event) =>
+                  setFeishuConfig((current) => ({ ...current, space_domain: event.target.value }))
+                }
+                placeholder="example"
               />
             </div>
 

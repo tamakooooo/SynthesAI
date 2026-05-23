@@ -36,6 +36,7 @@ class FeishuConfigItem(BaseModel):
         default="FEISHU_APP_SECRET",
         description="Env var for Feishu app secret",
     )
+    space_domain: str = Field(default="", description="Feishu space domain prefix")
     space_id: str = Field(default="", description="Feishu knowledge base space id")
     root_node_token: str = Field(default="", description="Root node token for publishing")
     publish_modules: list[str] = Field(default_factory=list, description="Modules allowed to publish")
@@ -174,6 +175,7 @@ def _build_frontend_config_response() -> FrontendConfigResponse:
             app_id_env=feishu_config.get("app_id_env", "FEISHU_APP_ID"),
             app_secret=feishu_config.get("app_secret"),
             app_secret_env=feishu_config.get("app_secret_env", "FEISHU_APP_SECRET"),
+            space_domain=feishu_config.get("space_domain", ""),
             space_id=feishu_config.get("space_id", ""),
             root_node_token=feishu_config.get("root_node_token", ""),
             publish_modules=feishu_config.get("publish_modules", []),
@@ -259,6 +261,7 @@ async def save_frontend_configuration(request: SaveFrontendConfigRequest):
         feishu_config_data: dict[str, object] = {
             "app_id_env": request.feishu.app_id_env,
             "app_secret_env": request.feishu.app_secret_env,
+            "space_domain": request.feishu.space_domain,
             "space_id": request.feishu.space_id,
             "root_node_token": request.feishu.root_node_token,
             "publish_modules": request.feishu.publish_modules,

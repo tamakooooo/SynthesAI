@@ -141,3 +141,72 @@ class TestConfigurationRoutes:
         # which needs full initialization, so we skip the full integration test
         routes = [route.path for route in app.routes]
         assert "/api/v1/configuration" in routes
+
+    def test_build_configuration_response_includes_feishu_space_domain(self) -> None:
+        """Test frontend configuration response preserves feishu space_domain."""
+        from pathlib import Path
+        from learning_assistant.server.routes.configuration import _build_frontend_config_response
+
+        provider = Mock()
+        provider.model_dump.return_value = {
+            "api_key_env": "OPENAI_API_KEY",
+            "default_model": "gpt-test",
+            "models": ["gpt-test"],
+            "base_url": "https://example.com/v1",
+        }
+
+        settings_model = Mock()
+        settings_model.llm.default_provider = "openai"
+        settings_model.llm.providers = {"openai": provider}
+
+        adapters_model = Mock()
+        adapters_model.feishu.model_dump.return_value = {
+            "enabled": True,
+            "config": {
+                "app_id_env": "FEISHU_APP_ID",
+                "app_secret_env": "FEISHU_APP_SECRET",
+                "space_domain": "acme-team",
+                "space_id": "space123",
+                "root_node_token": "node123",
+                "publish_modules": ["video_summary"],
+                "title_template": "{module} | {title}",
+            },
+        }
+
+        modules_model = Mock()
+        modules_model.model_dump.return_value = {
+            "video_summary": {"enabled": True, "priority": 1},
+        }
+
+        config_manager = Mock()
+        config_manager.settings_model = settings_model
+        config_manager.adapters_model = adapters_model
+        config_manager.modules_model = modules_model
+
+        server_config = Mock()
+        server_config.host = "0.0.0.0"
+        server_config.port = 8000
+        server_config.auth.enabled = True
+        server_config.auth.api_key_env = "SYNTHESAI_API_KEY"
+        server_config.timeouts.sync_request = 120
+        server_config.timeouts.task_polling = 10
+        server_config.task_queue.max_concurrent = 3
+        server_config.task_queue.max_queue_size = 100
+        server_config.task_queue.result_ttl = 3600
+
+        with patch(
+            "learning_assistant.server.routes.configuration.ServerContext.get_config_manager",
+            return_value=config_manager,
+        ), patch(
+            "learning_assistant.server.routes.configuration.get_server_config",
+            return_value=server_config,
+        ), patch(
+            "learning_assistant.server.routes.configuration._get_local_settings_file",
+            return_value=Path("/tmp/settings.local.yaml"),
+        ), patch(
+            "learning_assistant.server.routes.configuration._read_local_settings",
+            return_value={},
+        ):
+            response = _build_frontend_config_response()
+
+        assert response.feishu.space_domain == "acme-team"

@@ -230,6 +230,7 @@ export interface FeishuConfiguration {
   app_id_env: string;
   app_secret: string | null;
   app_secret_env: string;
+  space_domain: string;
   space_id: string;
   root_node_token: string;
   publish_modules: string[];
